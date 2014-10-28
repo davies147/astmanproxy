@@ -1,0 +1,15 @@
+Index: astmanproxy-1.21/src/astmanproxy.c
+===================================================================
+--- astmanproxy-1.21.orig/src/astmanproxy.c	2011-03-31 15:45:57.000000000 +0100
++++ astmanproxy-1.21/src/astmanproxy.c	2011-03-31 15:45:58.000000000 +0100
+@@ -468,6 +468,10 @@
+ 	AddHeader(&m, "Secret: %s", s->server->ast_pass);
+ 	AddHeader(&m, "Events: %s", s->server->ast_events);
+ 
++        s->inlen = 0;
++        s->inoffset = 0;
++        s->inbuf[0] = '\0';
++
+ 	for ( ;; ) {
+ 		if ( ast_connect(s) == -1 ) {
+ 			if (debug)

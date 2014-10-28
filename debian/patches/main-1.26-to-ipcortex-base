@@ -1,0 +1,68 @@
+Index: astmanproxy-1.26/Makefile
+===================================================================
+--- astmanproxy-1.26.orig/Makefile	2012-04-04 15:57:12.000000000 +0100
++++ astmanproxy-1.26/Makefile	2012-04-04 16:04:08.000000000 +0100
+@@ -27,7 +27,7 @@
+ LIBS := -lssl
+ 
+ # Add -g below for debug/GDB symbols
+-CFLAGS:=-Wall -O2 -D_REENTRANT -D_GNU_SOURCE -fPIC -Isrc/include -I/usr/include/openssl
++CFLAGS:=-Wall -O2 -D_REENTRANT -D_GNU_SOURCE -fPIC
+ 
+ ifeq (${OSARCH},Darwin)  
+   LIBS+=-lresolv
+@@ -48,7 +48,8 @@
+   MKTEMP=/usr/bin/mktemp
+ else
+   #These are used for all but Darwin
+-  CFLAGS+=-iquotesrc/include
++  #CFLAGS+=-I-
++  CFLAGS+=-iquote$(shell pwd)/src/include
+   LIBS+=-ldl -pthread
+   ASTLINK=-Wl,-E
+   SOLINK=-shared -Xlinker -x
+@@ -57,6 +58,8 @@
+   MKTEMP=/bin/mktemp
+ endif
+ 
++CFLAGS+=-Isrc/include -I/usr/include/openssl
++
+ MODDIR := $(LIBDIR)/modules
+ DEFINES:='-DPROXY_VERSION="$(VERSION)"' '-DCDIR="$(CONFDIR)"' '-DCFILE="$(CONFFILE)"'
+ DEFINES+='-DMDIR="$(MODDIR)"' '-DPDIR="$(PERMDIR)"' '-DPFILE="$(PERMFILE)"'
+@@ -73,8 +76,8 @@
+ 
+ 
+ # For printing only
+-SRCS := $(MODS:%=src/%.c)
+-HDRS := src/include/astmanproxy.h
++SRCS := $(MODS:%=%.c)
++HDRS := astmanproxy.h
+ 
+ all: astmanproxy cert
+ 
+Index: astmanproxy-1.26/src/standard.c
+===================================================================
+--- astmanproxy-1.26.orig/src/standard.c	2012-04-04 15:57:12.000000000 +0100
++++ astmanproxy-1.26/src/standard.c	2012-04-04 15:57:13.000000000 +0100
+@@ -18,6 +18,7 @@
+ 
+ 	for (;;) {
+ 		res = get_input(s, m->headers[m->hdrcount]);
++		if (debug>5) debugmsg("get_input returned line %d, res %d, %s", m->hdrcount + 1, res, m->headers[m->hdrcount]);
+ 
+ 		if (strstr(m->headers[m->hdrcount], "--END COMMAND--")) {
+ 				if (debug) debugmsg("Found END COMMAND");
+Index: astmanproxy-1.26/configs/astmanproxy.conf
+===================================================================
+--- astmanproxy-1.26.orig/configs/astmanproxy.conf	2012-04-04 15:57:12.000000000 +0100
++++ astmanproxy-1.26/configs/astmanproxy.conf	2012-04-04 15:57:13.000000000 +0100
+@@ -63,7 +63,7 @@
+ 
+ ; local user and group for proxy to run as; will NOT run as root!
+ proc_user = nobody
+-proc_group = nobody
++proc_group = asterisk
+ 
+ ; default input and output format for clients
+ ; inputformat = (standard|xml|http)

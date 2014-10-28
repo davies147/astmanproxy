@@ -1,0 +1,53 @@
+--- astmanproxy-1.21.orig/src/http.c
++++ astmanproxy-1.21/src/http.c
+@@ -108,7 +108,10 @@ int ParseHTTPInput(char *buf, struct mes
+ 		}
+ 		strncat(m->headers[m->hdrcount], v, n-v-1);
+ 		debugmsg("got hdr: %s", m->headers[m->hdrcount]);
+-		m->hdrcount++;
++		if( m->hdrcount < MAX_HEADERS - 1 )
++			m->hdrcount++;
++		else
++			break;
+ 	}
+ 
+ 	return (m->hdrcount > 0);
+--- astmanproxy-1.21.orig/src/proxyfunc.c
++++ astmanproxy-1.21/src/proxyfunc.c
+@@ -45,9 +45,10 @@ void *ProxyListSessions(struct mansessio
+ 	AddHeader(&m, "ProxyResponse: Success");
+ 
+ 	c = sessions;
+-	while (c && (m.hdrcount < MAX_HEADERS - 1) ) {
++	while (c && (m.hdrcount < MAX_HEADERS - 4) ) {
+ 		if (!c->server) {
+-			AddHeader(&m, "ProxyClientSession: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr), c->actionid);
++			AddHeader(&m, "ProxyClientSession: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
++			AddHeader(&m, "ProxyClientActionID: %s", c->actionid||"");
+ 			AddHeader(&m, "ProxyClientInputHandler: %s", c->input->formatname);
+ 			AddHeader(&m, "ProxyClientOutputHandler: %s", c->output->formatname);
+ 		} else 
+@@ -567,10 +568,10 @@ void ResendFromStack(char* uniqueid, str
+ 		{
+ 			// Got message, pull from cache.
+ 			int i, h, j;
+-			for( i=0,h=0,j=0; i<strlen(t->message) && i < MAX_STACKDATA-1 && h < MAX_HEADERS; i++ ) {
+-				if( t->message[i] == '\n' || i-j >= 80 ) {
++			for( i=0,h=0,j=0; i < strlen(t->message) && i < MAX_STACKDATA - 1 && h < MAX_HEADERS - 1; i++ ) {
++				if( t->message[i] == '\n' || i-j >= MAX_LEN ) {
+ 					strncpy( m->headers[h], t->message + j, i-j );
+-					m->headers[h][79] = '\0';
++					m->headers[h][MAX_LEN-1] = '\0';
+ 					j = i + 1;
+ 					if( debug )
+ 						debugmsg("remade: %s", m->headers[h]);
+--- astmanproxy-1.21.orig/src/astmanproxy.c
++++ astmanproxy-1.21/src/astmanproxy.c
+@@ -521,6 +521,7 @@ int StartServer(struct ast_server *srv) 
+ 	memset(s, 0, sizeof(struct mansession));
+ 	SetIOHandlers(s, "standard", "standard");
+ 	s->server = srv;
++	s->writetimeout = pc.asteriskwritetimeout;
+ 
+ 	bzero((char *) &s->sin,sizeof(s->sin));
+ 	s->sin.sin_family = AF_INET;

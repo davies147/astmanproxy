@@ -1,0 +1,84 @@
+Description: Upstream changes introduced in version 1.26-2
+ This patch has been created by dpkg-source during the package build.
+ Here's the last changelog entry, hopefully it gives details on why
+ those changes were made:
+ .
+ astmanproxy (1.26-2) unstable; urgency=low
+ .
+   * Potential segfault fix in ResendFromStack code.
+ .
+ The person named in the Author field signed this changelog entry.
+Author: root <steved@ipcortex.co.uk>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: http://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: <YYYY-MM-DD>
+
+--- astmanproxy-1.26.orig/src/proxyfunc.c
++++ astmanproxy-1.26/src/proxyfunc.c
+@@ -624,28 +624,36 @@ void ResendFromStack(char* uniqueid, str
+ 		{
+ 			// Got message, pull from cache.
+ 			int i, h, j;
+-			for( i=0,h=0,j=0; i < strlen(t->message) && i < MAX_STACKDATA - 1 && h < MAX_HEADERS - 1; i++ ) {
+-				if( t->message[i] == '\n' || i-j >= MAX_LEN ) {
+-					strncpy( m->headers[h], t->message + j, i-j );
+-					m->headers[h][MAX_LEN-1] = '\0';
+-					j = i + 1;
+-					if( debug )
+-						debugmsg("remade: %s", m->headers[h]);
+-					h++;
++			if( t->message ) {
++				for( i=0,h=0,j=0; i < strlen(t->message) && i < MAX_STACKDATA - 1 && h < MAX_HEADERS - 1; i++ ) {
++					if( t->message[i] == '\n' || i-j >= MAX_LEN ) {
++						strncpy( m->headers[h], t->message + j, i-j );
++						m->headers[h][MAX_LEN-1] = '\0';
++						j = i + 1;
++						if( debug )
++							debugmsg("remade: %s", m->headers[h]);
++						h++;
++					}
+ 				}
+-			}
+-			m->hdrcount = h;
+-			for( i=0,h=0,j=0; i < strlen(t->state) && i < MAX_STACKDATA - 1 && h < MAX_HEADERS - 1; i++ ) {
+-				if( t->state[i] == '\n' || i-j >= MAX_LEN ) {
+-					strncpy( m2->headers[h], t->state + j, i-j );
+-					m2->headers[h][MAX_LEN-1] = '\0';
+-					j = i + 1;
+-					if( debug )
+-						debugmsg("remade: %s", m2->headers[h]);
+-					h++;
++				m->hdrcount = h;
++			} else
++				m->hdrcount = 0;
++
++			if( t->state ) {
++				for( i=0,h=0,j=0; i < strlen(t->state) && i < MAX_STACKDATA - 1 && h < MAX_HEADERS - 1; i++ ) {
++					if( t->state[i] == '\n' || i-j >= MAX_LEN ) {
++						strncpy( m2->headers[h], t->state + j, i-j );
++						m2->headers[h][MAX_LEN-1] = '\0';
++						j = i + 1;
++						if( debug )
++							debugmsg("remade: %s", m2->headers[h]);
++						h++;
++					}
+ 				}
+-			}
+-			m2->hdrcount = h;
++				m2->hdrcount = h;
++			} else
++				m->hdrcount = 0;
++
+ 			pthread_mutex_unlock(&s->lock);
+ 			return;
+ 		}

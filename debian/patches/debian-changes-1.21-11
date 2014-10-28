@@ -1,0 +1,108 @@
+--- astmanproxy-1.21.orig/src/config_perms.c
++++ astmanproxy-1.21/src/config_perms.c
+@@ -74,14 +74,17 @@ void *add_userperm(char* username, char 
+ 		}
+ 	} while (*(s++));
+ 
+-	if( !strcasestr(user->filters, FILT_TOK_CDRONLY) )
++	if( strcasestr(user->filters, FILT_TOK_CDRONLY) )
+ 		user->filter_bits |= FILT_CDRONLY;
+-	if( !strcasestr(user->filters, FILT_TOK_NOVAR) )
++	if( strcasestr(user->filters, FILT_TOK_NOVAR) )
+ 		user->filter_bits |= FILT_NOVAR;
+ 
+ 	user->next = *pu;
+ 	*pu = user;
+ 
++	if (debug)
++		debugmsg("perm: %s, %s, %d", username, userspec, user->filter_bits);
++
+ 	return 0;
+ }
+ 
+@@ -108,9 +111,6 @@ void *processperm(char *s, struct proxy_
+ 			strncat(value, s, 1);
+ 	} while (*(s++));
+ 
+-	if (debug)
+-		debugmsg("perm: %s, %s", name, value);
+-
+ 	add_userperm(name,value,pu);
+ 
+ 	return 0;
+--- astmanproxy-1.21.orig/src/proxyfunc.c
++++ astmanproxy-1.21/src/proxyfunc.c
+@@ -186,6 +186,7 @@ void *ProxyLogin(struct mansession *s, s
+ 				strcpy(s->user.account, pu->account);
+ 				strcpy(s->user.server, pu->server);
+ 				strcpy(s->user.more_events, pu->more_events);
++				s->user.filter_bits = pu->filter_bits;
+ 				pthread_mutex_unlock(&s->lock);
+ 				if( debug )
+ 					debugmsg("Login as: %s", user);
+@@ -611,15 +612,18 @@ int ValidateAction(struct message *m, st
+ 	uchannel = s->user.channel;
+ 
+ 	// There is no other filering, so just return quickly.
+-	if( uchannel[0] == '\0' && ucontext[0] == '\0' && s->user.account[0] == '\0' && s->user.filter_bits == 0 )
++	if( uchannel[0] == '\0' && ucontext[0] == '\0' && s->user.account[0] == '\0' && s->user.filter_bits == 0 ) {
++		if( debug > 5 )
++			debugmsg("Message validated - no filtering");
+ 		return 1;
++	}
+ 
+ 	event = astman_get_header(m, "Event");
+ 	uniqueid = astman_get_header(m, "Uniqueid");
+ 
+ 	if( uniqueid[0] != '\0' && IsInStack(uniqueid, s) ) {
+ 		if( debug )
+-			debugmsg("Message passed (uniqueid): %s already allowed", uniqueid);
++			debugmsg("Message validated (uniqueid): %s already allowed", uniqueid);
+ 		if( !strcasecmp( event, "Hangup" ) )
+ 			DelFromStack(m, s);
+ 		return 1;
+@@ -627,7 +631,7 @@ int ValidateAction(struct message *m, st
+ 	uniqueid = astman_get_header(m, "Uniqueid1");
+ 	if( uniqueid[0] != '\0' && IsInStack(uniqueid, s) ) {
+ 		if( debug )
+-			debugmsg("Message passed (uniqueid1): %s already allowed", uniqueid);
++			debugmsg("Message validated (uniqueid1): %s already allowed", uniqueid);
+ 		if( !strcasecmp( event, "Hangup" ) )
+ 			DelFromStack(m, s);
+ 		return 1;
+@@ -635,7 +639,7 @@ int ValidateAction(struct message *m, st
+ 	uniqueid = astman_get_header(m, "Uniqueid2");
+ 	if( uniqueid[0] != '\0' && IsInStack(uniqueid, s) ) {
+ 		if( debug )
+-			debugmsg("Message passed (uniqueid2): %s already allowed", uniqueid);
++			debugmsg("Message validated (uniqueid2): %s already allowed", uniqueid);
+ 		if( !strcasecmp( event, "Hangup" ) )
+ 			DelFromStack(m, s);
+ 		return 1;
+@@ -646,10 +650,15 @@ int ValidateAction(struct message *m, st
+ 	response = astman_get_header(m, "Response");
+ 	actionid = astman_get_header(m, ACTION_ID);
+ 	if( response[0] != '\0' && actionid[0] != '\0' && !strcmp(actionid, s->actionid) ) {
+-		if (s->autofilter < 2 && !strcmp(actionid, s->actionid))
++		if (s->autofilter < 2 && !strcmp(actionid, s->actionid)) {
++			if( debug > 5 )
++				debugmsg("Message validated - actionID");
+ 			return 1;
+-		else if ( !strncmp(actionid, s->actionid, strlen(s->actionid)) )
++		} else if ( !strncmp(actionid, s->actionid, strlen(s->actionid)) ) {
++			if( debug > 5 )
++				debugmsg("Message validated - actionID");
+ 			return 1;
++		}
+ 	}
+ 
+ 	// Handle special filter flags
+@@ -749,7 +758,7 @@ int ValidateAction(struct message *m, st
+ 		}
+ 	}
+ 
+-	// Outbound or unfiltered packets are passed.
++	// Outbound or unfiltered packets are validated.
+ 	if( !inbound || (uchannel[0] == '\0' && ucontext[0] == '\0') ) {
+ 		return 1;
+ 	}

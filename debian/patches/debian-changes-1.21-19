@@ -1,0 +1,52 @@
+--- astmanproxy-1.21.orig/src/proxyfunc.c
++++ astmanproxy-1.21/src/proxyfunc.c
+@@ -459,7 +459,9 @@ int AddToStack(struct message *m, struct
+ 		absent++;
+ 
+ 	if( s->user.more_events[0] != '\0' && absent == 3 )
+-		return 1;	// Want more/anonymous events
++		ret = 1;	// Want more/anonymous events
++	if (debug > 4 )
++		debugmsg("AddToStack for fd: %d returning: %d", s->fd, ret);
+ 	return ret;
+ }
+ 
+@@ -603,6 +605,8 @@ int ValidateAction(struct message *m, st
+ 	char *cheaders[] = {"Channel","Channel1","Channel2","Source","Destination","DestinationChannel","ChannelCalling",NULL};
+ 	int i, cmatched, cfound;
+ 
++	if( debug > 5 )
++		debugmsg("ValidateAction called for fd: %d, %s", s->fd, inbound?"inbound":"outbound");
+ 	if( pc.authrequired && !s->authenticated )
+ 		return 0;
+ 
+--- astmanproxy-1.21.orig/src/astmanproxy.c
++++ astmanproxy-1.21/src/astmanproxy.c
+@@ -198,8 +198,10 @@ int WriteClients(struct message *m) {
+ 	// re-played at a later time. Hangup events also clean the list
+ 	// after being sent.
+ 	event = astman_get_header(m, "Event");
++	int is_nc = 0;
+ 	if( !strcasecmp( event, "Newchannel" ) ) {
+ 		AddToStack(m, m->session, 1);
++		is_nc = 1;	// Make sure we don't resend it from Stack.
+ 	}
+ 	while (c) {
+ 		if ( !c->server && m->hdrcount>1 && (valret=ValidateAction(m, c, 1)) ) {
+@@ -207,7 +209,15 @@ int WriteClients(struct message *m) {
+ // writing out this event...
+ // Send the retrospective Newchannel from the cache (m->session->cache) to this client (c)...
+  			if( debug > 4 )
+-				debugmsg("Validate allowed a message to a client");
++				debugmsg("Validate allowed a message to a client, ret=%d", valret);
++ 			if( (valret & ATS_UNIQUE) && m->session && !is_nc ) {
++				struct message m_temp;
++				memset(&m_temp, 0, sizeof(struct message) );
++				uniqueid = astman_get_header(m, "UniqueID");
++				ResendFromStack(uniqueid, m->session, &m_temp);
++				m_temp.session = m->session;
++				c->output->write(c, &m_temp);
++ 			}
+  			if( (valret & ATS_SRCUNIQUE) && m->session ) {
+ 				struct message m_temp;
+ 				memset(&m_temp, 0, sizeof(struct message) );

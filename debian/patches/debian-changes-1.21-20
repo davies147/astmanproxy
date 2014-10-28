@@ -1,0 +1,79 @@
+--- astmanproxy-1.21.orig/src/astmanproxy.c
++++ astmanproxy-1.21/src/astmanproxy.c
+@@ -190,7 +190,7 @@ int WriteClients(struct message *m) {
+ 	char *actionid;
+ 	char *uniqueid;
+ 	char *event;
+-	int valret;
++	int valret, autofilter;
+ 
+ 	c = sessions;
+ 
+@@ -204,11 +204,41 @@ int WriteClients(struct message *m) {
+ 		is_nc = 1;	// Make sure we don't resend it from Stack.
+ 	}
+ 	while (c) {
+-		if ( !c->server && m->hdrcount>1 && (valret=ValidateAction(m, c, 1)) ) {
++		if ( c->server || m->hdrcount<2 ) {
++			if( debug > 4 && c->server )
++				debugmsg("Not sending server message back to a server");
++			if( debug > 4 && m->hdrcount<2 )
++				debugmsg("Skipping short message of %d lines.", m->hdrcount);
++			c = c->next;
++			continue;
++		}
++		autofilter = -1; // Default to not enabled...
++		if( debug > 8 )
++			debugmsg("Autofilter = %d, ActionID = %s", c->autofilter, c->actionid);
++		if (c->autofilter && c->actionid) {
++			if( debug > 5 )
++				debugmsg("Checking ActionID filtering");
++			actionid = astman_get_header(m, ACTION_ID);
++			if ( c->autofilter == 1 && !strcmp(actionid, c->actionid) )
++	// Original AutoFilter
++				autofilter = 1;
++			else if ( c->autofilter == 2 && *actionid == '\0' )
++				autofilter = 1;
++			else if ( c->autofilter == 2 && !strncmp(actionid, c->actionid, strlen(c->actionid)) ) {
++	// New AutoFilter, actionid like "ast123-XX"
++				memmove( actionid, actionid+strlen(c->actionid), strlen(actionid)+1-strlen(c->actionid));
++				autofilter = 1;
++			} else if (debug > 5) {
++				autofilter = 0;
++				debugmsg("ActionID Filtered (blocked) a message to a client");
++			}
++		}
++
++		if ( (valret=ValidateAction(m, c, 1)) || autofilter == 1 ) {
+ // If VALRET > 1, then we may want to send a retrospective NewChannel before
+ // writing out this event...
+ // Send the retrospective Newchannel from the cache (m->session->cache) to this client (c)...
+- 			if( debug > 4 )
++ 			if( debug > 4 && valret )
+ 				debugmsg("Validate allowed a message to a client, ret=%d", valret);
+  			if( (valret & ATS_UNIQUE) && m->session && !is_nc ) {
+ 				struct message m_temp;
+@@ -234,22 +264,7 @@ int WriteClients(struct message *m) {
+ 				m_temp.session = m->session;
+ 				c->output->write(c, &m_temp);
+  			}
+-			if (c->autofilter && c->actionid) {
+-				if( debug > 5 )
+-					debugmsg("Checking ActionID filtering");
+-				actionid = astman_get_header(m, ACTION_ID);
+-				if ( c->autofilter == 1 && !strcmp(actionid, c->actionid) )
+-// Original AutoFilter
+-					c->output->write(c, m);
+-				else if ( c->autofilter == 2 && *actionid == '\0' )
+-					c->output->write(c, m);
+-				else if ( c->autofilter == 2 && !strncmp(actionid, c->actionid, strlen(c->actionid)) ) {
+-// New AutoFilter, actionid like "ast123-XX"
+-					memmove( actionid, actionid+strlen(c->actionid), strlen(actionid)+1-strlen(c->actionid));
+-					c->output->write(c, m);
+-				} else if (debug > 5)
+-					debugmsg("ActionID Filtered a message to a client");
+-			} else
++			if( autofilter != 0 )
+ 				c->output->write(c, m);
+ 
+ 			if (c->inputcomplete) {

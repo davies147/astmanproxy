@@ -1,0 +1,245 @@
+--- astmanproxy-1.21.orig/Makefile
++++ astmanproxy-1.21/Makefile
+@@ -3,7 +3,7 @@
+ OSARCH=$(shell uname -s)
+ OSREV=$(shell uname -r)
+ 
+-VERSION := 1.21
++VERSION := 1.21g
+ DESTDIR ?=
+ CONFDIR:=/etc/asterisk
+ CONFDIR_REAL := $(DESTDIR)/etc/asterisk
+@@ -27,7 +27,7 @@ SOBJS := $(HANDLERS:%=%.so)
+ LIBS := -lssl
+ 
+ # Add -g below for debug/GDB symbols
+-CFLAGS:=-Wall -O2 -D_REENTRANT -D_GNU_SOURCE -fPIC -Isrc/include -I/usr/include/openssl
++CFLAGS:=-Wall -O2 -D_REENTRANT -D_GNU_SOURCE -fPIC
+ 
+ ifeq (${OSARCH},Darwin)  
+   LIBS+=-lresolv
+@@ -48,7 +48,8 @@ ifeq (${OSARCH},Darwin)  
+   MKTEMP=/usr/bin/mktemp
+ else
+   #These are used for all but Darwin
+-  CFLAGS+=-I-
++  #CFLAGS+=-I-
++  CFLAGS+=-iquote$(shell pwd)/src/include
+   LIBS+=-ldl -pthread
+   ASTLINK=-Wl,-E
+   SOLINK=-shared -Xlinker -x
+@@ -57,6 +58,8 @@ else
+   MKTEMP=/bin/mktemp
+ endif
+ 
++CFLAGS+=-Isrc/include -I/usr/include/openssl
++
+ MODDIR := $(LIBDIR)/modules
+ DEFINES:='-DPROXY_VERSION="$(VERSION)"' '-DCDIR="$(CONFDIR)"' '-DCFILE="$(CONFFILE)"'
+ DEFINES+='-DMDIR="$(MODDIR)"' '-DPDIR="$(PERMDIR)"' '-DPFILE="$(PERMFILE)"'
+--- astmanproxy-1.21.orig/VERSIONS
++++ astmanproxy-1.21/VERSIONS
+@@ -1,3 +1,8 @@
++1.21g	Additional filter options to pass
++	brionly: Only Bridge events
++	xfronly: Only Transfer events
++	Combined ???only filters allow all matching types to pass
++
+ 1.21f	Additional filter options to pass
+ 	cdronly: Only CDR events
+ 	novar: Block SetVar/VarSet events
+--- astmanproxy-1.21.orig/README
++++ astmanproxy-1.21/README
+@@ -250,7 +250,9 @@ of non-filterable events to all clients.
+ block these packets if any form of filtering is requested.
+ 
+ Filters is a pipe-separated list of extra filter options. At present the following values have meaning:
+-	cdronly - Only pass Event: CDR records to this client. All other filters are ignored
++	cdronly - Only pass Event: CDR records to this client. Other ???only filters are allowed.
++	brionly - Only pass Event: Bridge events to this client. Other ???only filters are allowed.
++	xfronly - Only pass Event: Transfer events to this client. Other ???only filters are allowed.
+ 	novar - Pre-pass filter removes all SetVar/VarSet events
+ 
+ user=secret,channel,out_context (to Asterisk),in_context (From Asterisk),accountcode,server,more_events,filters
+--- astmanproxy-1.21.orig/src/md5.c
++++ astmanproxy-1.21/src/md5.c
+@@ -18,7 +18,7 @@
+  * will fill a supplied 16-byte array with the digest.
+  */
+ 
+-#include "endian.h"
++#include "amp_endian.h"
+ #include "astmanproxy.h"
+ #include "md5.h"
+ 
+--- astmanproxy-1.21.orig/src/config_perms.c
++++ astmanproxy-1.21/src/config_perms.c
+@@ -76,6 +76,10 @@ void *add_userperm(char* username, char 
+ 
+ 	if( strcasestr(user->filters, FILT_TOK_CDRONLY) )
+ 		user->filter_bits |= FILT_CDRONLY;
++	if( strcasestr(user->filters, FILT_TOK_BRIONLY) )
++		user->filter_bits |= FILT_BRIONLY;
++	if( strcasestr(user->filters, FILT_TOK_XFRONLY) )
++		user->filter_bits |= FILT_XFRONLY;
+ 	if( strcasestr(user->filters, FILT_TOK_NOVAR) )
+ 		user->filter_bits |= FILT_NOVAR;
+ 
+--- astmanproxy-1.21.orig/src/proxyfunc.c
++++ astmanproxy-1.21/src/proxyfunc.c
+@@ -620,28 +620,53 @@ int ValidateAction(struct message *m, st
+ 
+ 	event = astman_get_header(m, "Event");
+ 
++	// If any "FILT" rules fail, then stop processing afterwards.
++	i = 1;
+ 	// Handle special filter flags before IsInStack checks
+-	if( inbound && s->user.filter_bits & FILT_CDRONLY ) {
+-		if( !strcasecmp( event, "CDR" ) ) {
+-			if( debug )
+-				debugmsg("CDRONLY set. Is a CDR. Allowed");
+-			return 1;
+-		} else {
+-			if( debug )
+-				debugmsg("CDRONLY set. Not a CDR. Blocked");
+-			return 0;
++	if( inbound ) {
++		if( s->user.filter_bits & FILT_CDRONLY ) {
++			if( !strcasecmp( event, "CDR" ) ) {
++				if( debug )
++					debugmsg("CDRONLY set. Is a CDR. Allowed");
++				return 1;
++			} else {
++				i = 0;
++			}
+ 		}
+-	}
+-	if( inbound && s->user.filter_bits & FILT_NOVAR ) {
+-		if( !strcasecmp( event, "SetVar" ) ) {
+-			if( debug )
+-				debugmsg("NOVAR set. Blocked SetVar");
+-			return 0;
+-		} else if( !strcasecmp( event, "VarSet" ) ) {
+-			if( debug )
+-				debugmsg("NOVAR set. Blocked VarSet");
+-			return 0;
++		if( s->user.filter_bits & FILT_BRIONLY ) {
++			if( !strcasecmp( event, "Bridge" ) ) {
++				if( debug )
++					debugmsg("BRIONLY set. Is a Bridge. Allowed");
++				return 1;
++			} else {
++				i = 0;
++			}
++		}
++		if( s->user.filter_bits & FILT_XFRONLY ) {
++			if( !strcasecmp( event, "Transfer" ) ) {
++				if( debug )
++					debugmsg("XFRONLY set. Is a Transfer. Allowed");
++				return 1;
++			} else {
++				i = 0;
++			}
+ 		}
++		if( s->user.filter_bits & FILT_NOVAR ) {
++			if( !strcasecmp( event, "SetVar" ) ) {
++				if( debug )
++					debugmsg("NOVAR set. Blocked SetVar");
++				return 0;
++			} else if( !strcasecmp( event, "VarSet" ) ) {
++				if( debug )
++					debugmsg("NOVAR set. Blocked VarSet");
++				return 0;
++			}
++		}
++	}
++	if( i == 0 ) {
++		if( debug )
++			debugmsg("FILT_???ONLY rule blocked an event.");
++		return 0;
+ 	}
+ 
+ 	uniqueid = astman_get_header(m, "Uniqueid");
+--- astmanproxy-1.21.orig/src/include/astmanproxy.h
++++ astmanproxy-1.21/src/include/astmanproxy.h
+@@ -67,11 +67,15 @@ struct proxy_user {
+ };
+ 
+ #define FILT_TOK_CDRONLY "cdronly"
++#define FILT_TOK_BRIONLY "brionly"
++#define FILT_TOK_XFRONLY "xfronly"
+ #define FILT_TOK_NOVAR   "novar"
+ 
+ enum filters {
+-	FILT_CDRONLY = (1 << 0),	/* Only pass CDR events. Nothing else. */
+-	FILT_NOVAR =   (1 << 1),	/* Never send SetVar/VarSet events to this client */
++	FILT_CDRONLY = (1 << 0),	/* Only pass CDR events. Nothing else (except other FILT_???ONLY). */
++	FILT_BRIONLY = (1 << 1),	/* Only pass Bridge events. Nothing else (except other FILT_???ONLY). */
++	FILT_XFRONLY = (1 << 2),	/* Only pass Transfer events. Nothing else (except other FILT_???ONLY). */
++	FILT_NOVAR =   (1 << 3),	/* Never send SetVar/VarSet events to this client */
+ };
+ 
+ struct proxyconfig {
+--- /dev/null
++++ astmanproxy-1.21/src/include/amp_endian.h
+@@ -0,0 +1,60 @@
++/*
++ * Asterisk -- A telephony toolkit for Linux.
++ *
++ * Asterisk architecture endianess compatibility definitions
++ * 
++ * Copyright (C) 1999 - 2005, Digium, Inc.
++ *
++ * Mark Spencer <markster@digium.com>
++ *
++ * This program is free software, distributed under the terms of
++ * the GNU Lesser General Public License.  Other components of
++ * Asterisk are distributed under The GNU General Public License
++ * only.
++ */
++
++#ifndef _ASTERISK_ENDIAN_H
++#define _ASTERISK_ENDIAN_H
++
++/*
++ * Autodetect system endianess
++ */
++
++#ifdef SOLARIS
++#include "solaris-compat/compat.h"
++#endif
++
++#ifndef __BYTE_ORDER
++#ifdef __linux__
++#include <endian.h>
++#elif defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__APPLE__)
++#if defined(__OpenBSD__)
++#include <machine/types.h>
++#endif /* __OpenBSD__ */
++#include <machine/endian.h>
++#define __BYTE_ORDER BYTE_ORDER
++#define __LITTLE_ENDIAN LITTLE_ENDIAN
++#define __BIG_ENDIAN BIG_ENDIAN
++#else
++#ifdef __LITTLE_ENDIAN__
++#define __BYTE_ORDER __LITTLE_ENDIAN
++#endif /* __LITTLE_ENDIAN */
++
++#if defined(i386) || defined(__i386__)
++#define __BYTE_ORDER __LITTLE_ENDIAN
++#endif /* defined i386 */
++
++#if defined(sun) && defined(unix) && defined(sparc)
++#define __BYTE_ORDER __BIG_ENDIAN
++#endif /* sun unix sparc */
++
++#endif /* linux */
++
++#endif /* __BYTE_ORDER */
++
++#ifndef __BYTE_ORDER
++#error Need to know endianess
++#endif /* __BYTE_ORDER */
++
++#endif /* _ASTERISK_ENDIAN_H */
++

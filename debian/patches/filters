@@ -1,0 +1,257 @@
+Index: astmanproxy-1.21/src/config_perms.c
+===================================================================
+--- astmanproxy-1.21.orig/src/config_perms.c	2011-02-03 15:02:43.000000000 +0000
++++ astmanproxy-1.21/src/config_perms.c	2011-02-03 17:21:00.000000000 +0000
+@@ -68,12 +68,23 @@
+ 			case 6:
+ 			 user->more_events[0] = 'y';	// Any non-null entry
+ 			 break;
++			case 7:
++			 strncat(user->filters, s, 1);
++			 break;
+ 		}
+ 	} while (*(s++));
+ 
++	if( strcasestr(user->filters, FILT_TOK_CDRONLY) )
++		user->filter_bits |= FILT_CDRONLY;
++	if( strcasestr(user->filters, FILT_TOK_NOVAR) )
++		user->filter_bits |= FILT_NOVAR;
++
+ 	user->next = *pu;
+ 	*pu = user;
+ 
++	if (debug)
++		debugmsg("perm: %s, %s, %d", username, userspec, user->filter_bits);
++
+ 	return 0;
+ }
+ 
+@@ -100,9 +111,6 @@
+ 			strncat(value, s, 1);
+ 	} while (*(s++));
+ 
+-	if (debug)
+-		debugmsg("perm: %s, %s", name, value);
+-
+ 	add_userperm(name,value,pu);
+ 
+ 	return 0;
+Index: astmanproxy-1.21/src/include/astmanproxy.h
+===================================================================
+--- astmanproxy-1.21.orig/src/include/astmanproxy.h	2011-02-03 15:02:43.000000000 +0000
++++ astmanproxy-1.21/src/include/astmanproxy.h	2011-02-03 15:02:51.000000000 +0000
+@@ -60,9 +60,19 @@
+ 	char account[80];
+ 	char server[80];
+ 	char more_events[2];
++	char filters[80];
++	unsigned int filter_bits;
+ 	struct proxy_user *next;
+ };
+ 
++#define FILT_TOK_CDRONLY "cdronly"
++#define FILT_TOK_NOVAR   "novar"
++
++enum filters {
++	FILT_CDRONLY = (1 << 0),	/* Only pass CDR events. Nothing else. */
++	FILT_NOVAR =   (1 << 1),	/* Never send SetVar/VarSet events to this client */
++};
++
+ struct proxyconfig {
+ 	struct ast_server *serverlist;
+ 	struct proxy_user *userlist;
+Index: astmanproxy-1.21/VERSIONS
+===================================================================
+--- astmanproxy-1.21.orig/VERSIONS	2011-02-03 15:02:43.000000000 +0000
++++ astmanproxy-1.21/VERSIONS	2011-02-03 15:02:51.000000000 +0000
+@@ -1,5 +1,6 @@
+-
+-
++1.21f	Additional filter options to pass
++	cdronly: Only CDR events
++	novar: Block SetVar/VarSet events
+ 
+ 1.21e	Several fixes to UniqueID header tracking (Steve Davies)
+ 	Ensure that Response: headers are not filtered out. Assumes ActionID is sent (Steve Davies)
+Index: astmanproxy-1.21/README
+===================================================================
+--- astmanproxy-1.21.orig/README	2011-02-03 15:02:43.000000000 +0000
++++ astmanproxy-1.21/README	2011-02-03 15:02:51.000000000 +0000
+@@ -249,11 +249,15 @@
+ of non-filterable events to all clients. The default behaviour is to
+ block these packets if any form of filtering is requested.
+ 
+-user=secret,channel,out_context (to Asterisk),in_context (From Asterisk),accountcode,server,more_events
++Filters is a pipe-separated list of extra filter options. At present the following values have meaning:
++	cdronly - Only pass Event: CDR records to this client. All other filters are ignored
++	novar - Pre-pass filter removes all SetVar/VarSet events
++
++user=secret,channel,out_context (to Asterisk),in_context (From Asterisk),accountcode,server,more_events,filters
+ 
+ e.g.:
+   steve=steve,SIP/snom190,local,
+-  dave=securepass,SIP/1002,,,davesaccount,daveserver
++  dave=securepass,SIP/1002,,,davesaccount,daveserver,y,cdronly|novar
+   bill=pass
+ 
+ ===================================================================
+Index: astmanproxy-1.21/src/proxyfunc.c
+===================================================================
+--- astmanproxy-1.21.orig/src/proxyfunc.c	2011-02-03 15:02:43.000000000 +0000
++++ astmanproxy-1.21/src/proxyfunc.c	2011-02-03 17:42:05.000000000 +0000
+@@ -186,6 +186,7 @@
+ 				strcpy(s->user.account, pu->account);
+ 				strcpy(s->user.server, pu->server);
+ 				strcpy(s->user.more_events, pu->more_events);
++				s->user.filter_bits = pu->filter_bits;
+ 				pthread_mutex_unlock(&s->lock);
+ 				if( debug )
+ 					debugmsg("Login as: %s", user);
+@@ -604,21 +605,25 @@
+ 	if( pc.authrequired && !s->authenticated )
+ 		return 0;
+ 
+-	if( inbound )	// Inbound to client from server
++	if( inbound )	// Inbound from server to client
+ 		ucontext = s->user.icontext;
+ 	else		// Outbound from client to server
+ 		ucontext = s->user.ocontext;
+ 	uchannel = s->user.channel;
+ 
+-	// There is no filering, so just return quickly.
+-	if( uchannel[0] == '\0' && ucontext[0] == '\0' && s->user.account[0] == '\0' )
++	// There is no other filering, so just return quickly.
++	if( uchannel[0] == '\0' && ucontext[0] == '\0' && s->user.account[0] == '\0' && s->user.filter_bits == 0 ) {
++		if( debug > 5 )
++			debugmsg("Message validated - no filtering");
+ 		return 1;
++	}
+ 
+ 	event = astman_get_header(m, "Event");
+ 	uniqueid = astman_get_header(m, "Uniqueid");
++
+ 	if( uniqueid[0] != '\0' && IsInStack(uniqueid, s) ) {
+ 		if( debug )
+-			debugmsg("Message passed (uniqueid): %s already allowed", uniqueid);
++			debugmsg("Message validated (uniqueid): %s already allowed", uniqueid);
+ 		if( !strcasecmp( event, "Hangup" ) )
+ 			DelFromStack(m, s);
+ 		return 1;
+@@ -626,7 +631,7 @@
+ 	uniqueid = astman_get_header(m, "Uniqueid1");
+ 	if( uniqueid[0] != '\0' && IsInStack(uniqueid, s) ) {
+ 		if( debug )
+-			debugmsg("Message passed (uniqueid1): %s already allowed", uniqueid);
++			debugmsg("Message validated (uniqueid1): %s already allowed", uniqueid);
+ 		if( !strcasecmp( event, "Hangup" ) )
+ 			DelFromStack(m, s);
+ 		return 1;
+@@ -634,7 +639,7 @@
+ 	uniqueid = astman_get_header(m, "Uniqueid2");
+ 	if( uniqueid[0] != '\0' && IsInStack(uniqueid, s) ) {
+ 		if( debug )
+-			debugmsg("Message passed (uniqueid2): %s already allowed", uniqueid);
++			debugmsg("Message validated (uniqueid2): %s already allowed", uniqueid);
+ 		if( !strcasecmp( event, "Hangup" ) )
+ 			DelFromStack(m, s);
+ 		return 1;
+@@ -645,10 +650,34 @@
+ 	response = astman_get_header(m, "Response");
+ 	actionid = astman_get_header(m, ACTION_ID);
+ 	if( response[0] != '\0' && actionid[0] != '\0' && !strcmp(actionid, s->actionid) ) {
+-		if (s->autofilter < 2 && !strcmp(actionid, s->actionid))
++		if (s->autofilter < 2 && !strcmp(actionid, s->actionid)) {
++			if( debug > 5 )
++				debugmsg("Message validated - actionID");
+ 			return 1;
+-		else if ( !strncmp(actionid, s->actionid, strlen(s->actionid)) )
++		} else if ( !strncmp(actionid, s->actionid, strlen(s->actionid)) ) {
++			if( debug > 5 )
++				debugmsg("Message validated - actionID");
++			return 1;
++		}
++	}
++
++	// Handle special filter flags
++	if( inbound && s->user.filter_bits & FILT_CDRONLY ) {
++		if( !strcasecmp( event, "CDR" ) ) {
++			if( debug )
++				debugmsg("CDRONLY set. Is a CDR. Allowed");
+ 			return 1;
++		} else {
++			if( debug )
++				debugmsg("CDRONLY set. Not a CDR. Blocked");
++			return 0;
++		}
++	}
++	if( inbound && s->user.filter_bits & FILT_NOVAR ) {
++		if( !strcasecmp( event, "SetVar" ) )
++			return 0;
++		else if( !strcasecmp( event, "VarSet" ) )
++			return 0;
+ 	}
+ 
+ 	action = astman_get_header(m, "Action");
+@@ -729,7 +758,7 @@
+ 		}
+ 	}
+ 
+-	// Outbound or unfiltered packets are passed.
++	// Outbound or unfiltered packets are validated.
+ 	if( !inbound || (uchannel[0] == '\0' && ucontext[0] == '\0') ) {
+ 		return 1;
+ 	}
+Index: astmanproxy-1.21/src/astmanproxy.c
+===================================================================
+--- astmanproxy-1.21.orig/src/astmanproxy.c	2011-02-03 15:29:06.000000000 +0000
++++ astmanproxy-1.21/src/astmanproxy.c	2011-02-03 15:29:42.000000000 +0000
+@@ -229,7 +229,7 @@
+ 					memmove( actionid, actionid+strlen(c->actionid), strlen(actionid)+1-strlen(c->actionid));
+ 					c->output->write(c, m);
+ 				} else if (debug > 5)
+-					debugmsg("ActionID Filtered a message to a client\n");
++					debugmsg("ActionID Filtered a message to a client");
+ 			} else
+ 				c->output->write(c, m);
+ 
+Index: astmanproxy-1.21/src/standard.c
+===================================================================
+--- astmanproxy-1.21.orig/src/standard.c	2011-02-03 16:27:28.000000000 +0000
++++ astmanproxy-1.21/src/standard.c	2011-02-03 16:27:40.000000000 +0000
+@@ -35,9 +35,12 @@
+ 			} else {
+ 				m->in_command = 0; // reset when block full
+ 			}
+-		} else if (res < 0)
++		} else if (res < 0) {
++			if (debug) debugmsg("Read error %d getting line", res);
+ 			break;
++		}
+ 	}
++	if (debug>2) debugmsg("Returning standard block of %d lines, res %d", m->hdrcount, res);
+ 
+ 	return res;
+ }
+@@ -51,6 +54,9 @@
+ 	// This can have HUGE benefits under load.
+ 	at = 0;
+ 	pthread_mutex_lock(&s->lock);
++
++	if (debug>2) debugmsg("Transmitting standard block of %d lines, fd %d", m->hdrcount, s->fd);
++
+ 	for (i=0; i<m->hdrcount; i++) {
+ 		if( ! strlen(m->headers[i]) )
+ 			continue;
+Index: astmanproxy-1.21/src/ssl.c
+===================================================================
+--- astmanproxy-1.21.orig/src/ssl.c	2011-02-03 16:42:31.000000000 +0000
++++ astmanproxy-1.21/src/ssl.c	2011-02-03 16:42:47.000000000 +0000
+@@ -216,6 +216,8 @@
+ 
+ 	if (ret > 0)
+ 		rec_bytes += ret;
++	if ( debug && ret < 0 )
++		debugmsg("Read error %d", ret);
+ 
+ 	if (debug && s<-1)
+ 		debugmsg("Received %d bytes from SSL socket", ret);

@@ -1,0 +1,122 @@
+Index: astmanproxy-1.21/src/common.c
+===================================================================
+--- astmanproxy-1.21.orig/src/common.c	2011-02-17 13:50:45.000000000 +0000
++++ astmanproxy-1.21/src/common.c	2011-02-18 11:39:13.000000000 +0000
+@@ -18,39 +18,52 @@
+ {
+ 	/* output must have at least sizeof(s->inbuf) space */
+ 	int res;
++	int haveline = 0;
+ 	int x;
+ 	struct pollfd fds[1];
+ 	char iabuf[INET_ADDRSTRLEN];
+ 
+ 	/* Look for \r\n from the front, our preferred end of line */
+-	for (x=0;x<s->inlen;x++) {
+-			int xtra = 0;
++	for (x=s->inoffset; x < s->inoffset + s->inlen && x < s->inoffset + MAX_LEN - 1; x++) {
++		int xtra = 0;
+ 		if (s->inbuf[x] == '\n') {
+-				if (x && s->inbuf[x-1] == '\r') {
+-					xtra = 1;
+-				}
++			if (x > s->inoffset && s->inbuf[x-1] == '\r') {
++				xtra = 1;
++			}
+ 			/* Copy output data not including \r\n */
+-			memcpy(output, s->inbuf, x - xtra);
++			memcpy(output, s->inbuf + s->inoffset, x - s->inoffset - xtra);
+ 			/* Add trailing \0 */
+-			output[x-xtra] = '\0';
++			output[x - s->inoffset - xtra] = '\0';
+ 			/* Move remaining data back to the front */
+-			memmove(s->inbuf, s->inbuf + x + 1, s->inlen - x);
+-			s->inlen -= (x + 1);
+-			return 1;
++			s->inlen -= (x - s->inoffset + 1);
++			s->inoffset = x + 1;
++			haveline = 1;
++			break;
+ 		}
+ 	}
++	if( s->inlen == 0 )
++		s->inoffset = 0;
++	if( haveline == 1 && sizeof(s->inbuf) - 1 - s->inlen - s->inoffset < MAX_LEN )
++		return 1;
++	if( s->inoffset > (MAX_LEN_INBUF*3/4) || (s->inoffset > (MAX_LEN_INBUF/4) && MAX_LEN_INBUF - s->inlen - s->inoffset < (MAX_LEN_INBUF/4)) ) {
++		memmove(s->inbuf, s->inbuf + s->inoffset, s->inlen);
++		s->inoffset = 0;
++		s->inbuf[s->inlen] = '\0';
++	}
+ 
+ 	if (s->inlen >= sizeof(s->inbuf) - 1) {
+ 		if (debug)
+-		debugmsg("Warning: Got long line with no end from %s: %s\n", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr), s->inbuf);
++			debugmsg("Warning: Got long line with no end from %s: %s\n", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr), s->inbuf);
+ 		s->inlen = 0;
++		s->inoffset = 0;
++		s->inbuf[0] = '\0';
+ 	}
+ 	/* get actual fd, even if a negative SSL fd */
+ 	fds[0].fd = get_real_fd(s->fd);
+ 
+ 	fds[0].events = POLLIN;
+ 	do {
+-		res = poll(fds, 1, -1);
++		res = poll(fds, 1, haveline?0:-1);
+ 		if (res < 0) {
+ 			if (errno == EINTR) {
+ 				if (s->dead)
+@@ -63,19 +76,21 @@
+ 		} else if (res > 0) {
+ 			pthread_mutex_lock(&s->lock);
+ 			/* read from socket; SSL or otherwise */
+-			res = m_recv(s->fd, s->inbuf + s->inlen, sizeof(s->inbuf) - 1 - s->inlen, 0);
++			res = m_recv(s->fd, s->inbuf + s->inoffset + s->inlen, sizeof(s->inbuf) - s->inoffset - 1 - s->inlen, 0);
+ 			pthread_mutex_unlock(&s->lock);
+ 			if (res < 1)
+ 				return -1;
+ 			break;
+ 
+ 		}
+-	} while(1);
++	} while(!haveline);
+ 
+ 	/* We have some input, but it's not ready for processing */
+-	s->inlen += res;
+-	s->inbuf[s->inlen] = '\0';
+-	return 0;
++	if( res > 0 ) {
++		s->inlen += res;
++		s->inbuf[s->inoffset + s->inlen] = '\0';
++	}
++	return haveline;
+ }
+ 
+ char *astman_get_header(struct message *m, char *var)
+Index: astmanproxy-1.21/src/include/astmanproxy.h
+===================================================================
+--- astmanproxy-1.21.orig/src/include/astmanproxy.h	2011-02-17 13:50:45.000000000 +0000
++++ astmanproxy-1.21/src/include/astmanproxy.h	2011-02-18 09:54:44.000000000 +0000
+@@ -27,8 +27,9 @@
+ #define BUFSIZE		 1024
+ #define MAX_HEADERS	 256
+ #define MAX_LEN		 1024
++#define MAX_LEN_INBUF	 (1024*1024)
+ #define MAX_STACK	 1024
+-#define MAX_STACKDATA	 32768
++#define MAX_STACKDATA	 (1024*32)
+ 
+ #define ATS_RESERVED    1
+ #define ATS_UNIQUE      2
+@@ -118,8 +119,9 @@
+ 	pthread_mutex_t lock;
+ 	struct sockaddr_in sin;
+ 	int fd;
+-	char inbuf[MAX_LEN];
++	char inbuf[MAX_LEN_INBUF];
+ 	int inlen;
++	int inoffset;
+ 	struct iohandler *input;
+ 	struct iohandler *output;
+ 	int autofilter;

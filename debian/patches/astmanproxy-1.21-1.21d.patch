@@ -1,0 +1,625 @@
+Binary files astmanproxy-1.21/astmanproxy and astmanproxy-1.21d/astmanproxy differ
+Binary files astmanproxy-1.21/astmanproxy.o and astmanproxy-1.21d/astmanproxy.o differ
+Binary files astmanproxy-1.21/common.o and astmanproxy-1.21d/common.o differ
+Binary files astmanproxy-1.21/config.o and astmanproxy-1.21d/config.o differ
+Binary files astmanproxy-1.21/config_perms.o and astmanproxy-1.21d/config_perms.o differ
+diff -durN astmanproxy-1.21/configs/astmanproxy.users astmanproxy-1.21d/configs/astmanproxy.users
+--- astmanproxy-1.21/configs/astmanproxy.users	2006-04-08 03:50:08.000000000 +0100
++++ astmanproxy-1.21d/configs/astmanproxy.users	2007-12-12 09:49:38.000000000 +0000
+@@ -6,5 +6,13 @@
+ ; channel setting causes filtering of events only for the specified
+ ; channel to be sent to this user.
+ ;
+-; user=secret,channel,out_context (to Asterisk),in_context (From Asterisk)
+-steve=steve,SIP/snom190,local,
++; If multiple server connections are used, and the "server" parameter
++; setting is given, the user will "prefer" the listed server when
++; sending commands. It must be an exact match to the hostname/ip address
++; in the .conf configuration file.
++;
++; user=secret,[channel],[out_context (to Asterisk)],[in_context (From Asterisk)],[accountcode],[server]
++;
++; steve=steve,SIP/snom190,local,
++; dave=securepass,SIP/1002,,,davesaccount
++; bill=pass
+Binary files astmanproxy-1.21/csv.o and astmanproxy-1.21d/csv.o differ
+Binary files astmanproxy-1.21/csv.so and astmanproxy-1.21d/csv.so differ
+Binary files astmanproxy-1.21/http.o and astmanproxy-1.21d/http.o differ
+Binary files astmanproxy-1.21/http.so and astmanproxy-1.21d/http.so differ
+Binary files astmanproxy-1.21/log.o and astmanproxy-1.21d/log.o differ
+diff -durN astmanproxy-1.21/Makefile astmanproxy-1.21d/Makefile
+--- astmanproxy-1.21/Makefile	2006-09-13 17:26:28.000000000 +0100
++++ astmanproxy-1.21d/Makefile	2008-01-21 15:54:39.000000000 +0000
+@@ -174,3 +174,4 @@
+ love:
+ 	@echo "Here?  Now?"
+ 
++# DO NOT DELETE
+Binary files astmanproxy-1.21/md5.o and astmanproxy-1.21d/md5.o differ
+Binary files astmanproxy-1.21/proxyfunc.o and astmanproxy-1.21d/proxyfunc.o differ
+diff -durN astmanproxy-1.21/README astmanproxy-1.21d/README
+--- astmanproxy-1.21/README	2006-07-01 16:46:02.000000000 +0100
++++ astmanproxy-1.21d/README	2007-12-07 09:57:00.000000000 +0000
+@@ -205,8 +205,26 @@
+ channel setting causes filtering of events only for the specified
+ channel to be sent to this user.
+ 
+-; user=secret,channel,out_context (to Asterisk),in_context (From Asterisk)
+-; steve=steve,SIP/snom190,local,
++Following this, an outbound context and an inbound context may be
++(optionally) specified. This will cause messages to and from
++Asterisk respectively to be blocked if they contain a Context: header
++which does not match the specified value. This might be used to
++prevent a client making calls except in a predefined context.
++
++An account code may be (optionally) specified. This will
++force the Account: header to be overwritten for all commands to/from
++this client. If the Action is "Originate", then a missing Account:
++header will be added.
++
++Lastly, a "server" header will cause the proxy to behave as if the
++client has included a "Server:" header in each request packet.
++
++user=secret,channel,out_context (to Asterisk),in_context (From Asterisk),accountcode,server
++
++e.g.:
++  steve=steve,SIP/snom190,local,
++  dave=securepass,SIP/1002,,,davesaccount,daveserver
++  bill=pass
+ 
+ ===================================================================
+ On the 'Action: Challenge' Authentication Mechanism
+diff -durN astmanproxy-1.21/src/astmanproxy.c astmanproxy-1.21d/src/astmanproxy.c
+--- astmanproxy-1.21/src/astmanproxy.c	2006-07-05 16:13:58.000000000 +0100
++++ astmanproxy-1.21d/src/astmanproxy.c	2008-01-21 17:24:35.000000000 +0000
+@@ -21,6 +21,9 @@
+ extern void *ProxyLogin(struct mansession *s, struct message *m);
+ extern void *ProxyLogoff(struct mansession *s);
+ extern int ValidateAction(struct message *m, struct mansession *s, int inbound);
++extern void AddToStack(struct message *m, struct mansession *s, int withbody);
++extern void DelFromStack(struct message *m, struct mansession *s);
++extern void FreeStack(struct mansession *s);
+ 
+ int ConnectAsterisk(struct mansession *s);
+ 
+@@ -82,6 +85,7 @@
+ 			logmsg("Shutdown, closed client %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
+ 		}
+ 		close_sock(c->fd);	/* close tcp & ssl socket */
++		FreeStack(c);
+ 		pthread_mutex_destroy(&c->lock);
+ 		free(c);
+ 	}
+@@ -157,6 +161,7 @@
+ 			sessions = cur->next;
+ 		debugmsg("Connection closed: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr));
+ 		close_sock(s->fd);	/* close tcp/ssl socket */
++		FreeStack(s);
+ 		pthread_mutex_destroy(&s->lock);
+ 		free(s);
+ 	} else if (debug)
+@@ -173,8 +178,18 @@
+ int WriteClients(struct message *m) {
+ 	struct mansession *c;
+ 	char *actionid;
++	char *action;
+ 
+ 	c = sessions;
++
++	// We stash New Channel events in case they are filtered and need to be
++	// re-played at a later time. Hangup events also clean the list.
++	action = astman_get_header(m, "Action");
++	if( !strcasecmp( action, "Newchannel" ) ) {
++		AddToStack(m, m->session, 1);
++	} else if( !strcasecmp( action, "Hangup" ) ) {
++		DelFromStack(m, m->session);
++	}
+ 	while (c) {
+ 		if ( !c->server && m->hdrcount>1 && ValidateAction(m, c, 1) ) {
+ 			if (c->autofilter && c->actionid) {
+@@ -198,14 +213,19 @@
+ int WriteAsterisk(struct message *m) {
+ 	int i;
+ 	char outstring[MAX_LEN], *dest;
+-	struct mansession *s, *first;
++	struct mansession *u, *s, *first;
+ 
+ 	first = NULL;
+ 	dest = NULL;
+ 
+ 	s = sessions;
++	u = m->session;
++
++	if( u->user.server[0] != '\0' )
++		dest = u->user.server;
++	else
++		dest = astman_get_header(m, "Server");
+ 
+-	dest = astman_get_header(m, "Server");
+ 	if (debug && *dest) debugmsg("set destination: %s", dest);
+ 	while ( s ) {
+ 		if ( s->server && (s->connected > 0) ) {
+@@ -282,24 +302,22 @@
+ 			proxyaction = astman_get_header(&m, "ProxyAction");
+ 			actionid = astman_get_header(&m, ACTION_ID);
+ 			action = astman_get_header(&m, "Action");
+-			if ( !strcasecmp(action, "Login") )
+-			if (!s->authenticated)
++			if ( !strcasecmp(action, "Login") ) {
++				s->authenticated = 0;
+ 				ProxyLogin(s, &m);
+-			else
+-				break;
+-			else if ( !strcasecmp(action, "Logoff") )
+-			ProxyLogoff(s);
++			} else if ( !strcasecmp(action, "Logoff") )
++				ProxyLogoff(s);
+ 			else if ( !strcasecmp(action, "Challenge") )
+-			ProxyChallenge(s, &m);
++				ProxyChallenge(s, &m);
+ 			else if ( !(*proxyaction == '\0') )
+-			proxyaction_do(proxyaction, &m, s);
++				proxyaction_do(proxyaction, &m, s);
+ 			else if ( ValidateAction(&m, s, 0) ) {
+-			if ( !(*actionid == '\0') )
+-				setactionid(actionid, &m, s);
+-			if ( !WriteAsterisk(&m) )
+-				break;
++				if ( !(*actionid == '\0') )
++					setactionid(actionid, &m, s);
++				if ( !WriteAsterisk(&m) )
++					break;
+ 			} else {
+-			SendError(s, "Action Filtered");
++				SendError(s, "Action Filtered", action);
+ 			}
+ 		} else if (res < 0)
+ 			break;
+@@ -352,7 +370,7 @@
+ 			AddHeader(m, "Server: %s", m->session->server->ast_host);
+ 
+ 			if (!WriteClients(m))
+-			break;
++				break;
+ 		} else if (res < 0) {
+ 			/* TODO: do we need to do more than this here? or something different? */
+ 			if ( debug )
+@@ -589,6 +607,7 @@
+ 		s->fd = as;
+ 		SetIOHandlers(s, pc.inputformat, pc.outputformat);
+ 		s->autofilter = pc.autofilter;
++		s->writetimeout = pc.clientwritetimeout;
+ 		s->server = NULL;
+ 
+ 		pthread_mutex_lock(&sessionlock);
+diff -durN astmanproxy-1.21/src/config_perms.c astmanproxy-1.21d/src/config_perms.c
+--- astmanproxy-1.21/src/config_perms.c	2006-07-01 16:43:37.000000000 +0100
++++ astmanproxy-1.21d/src/config_perms.c	2007-10-25 11:13:02.000000000 +0100
+@@ -57,6 +57,12 @@
+ 			case 3:
+ 			 strncat(user->icontext, s, 1);
+ 			 break;
++			case 4:
++			 strncat(user->account, s, 1);
++			 break;
++			case 5:
++			 strncat(user->server, s, 1);
++			 break;
+ 		}
+ 	} while (*(s++));
+ 
+diff -durN astmanproxy-1.21/src/include/astmanproxy.h astmanproxy-1.21d/src/include/astmanproxy.h
+--- astmanproxy-1.21/src/include/astmanproxy.h	2006-07-01 16:43:37.000000000 +0100
++++ astmanproxy-1.21d/src/include/astmanproxy.h	2008-01-21 16:06:19.000000000 +0000
+@@ -27,6 +27,8 @@
+ #define BUFSIZE		 1024
+ #define MAX_HEADERS	 256
+ #define MAX_LEN		 1024
++#define MAX_STACK	 1024
++#define MAX_STACKDATA	 32768
+ 
+ #define PROXY_BANNER	"Asterisk Call Manager Proxy"
+ #define PROXY_SHUTDOWN  "ProxyMessage: Proxy Shutting Down"
+@@ -50,6 +52,8 @@
+ 	char channel[80];
+ 	char icontext[80];
+ 	char ocontext[80];
++	char account[80];
++	char server[80];
+ 	struct proxy_user *next;
+ };
+ 
+@@ -85,6 +89,12 @@
+ 	struct iohandler *next;
+ };
+ 
++struct mstack {
++	struct mstack *next;
++	char uniqueid[80];
++	char *message;
++};
++
+ struct mansession {
+ 	pthread_t t;
+ 	pthread_mutex_t lock;
+@@ -106,6 +116,8 @@
+ 	char actionid[MAX_LEN];
+ 	char challenge[10];			/*! Authentication challenge */
+ 	int writetimeout;  			/* Timeout for ast_carefulwrite() */
++	struct mstack *stack;
++	int depth;
+ 	struct mansession *next;
+ };
+ 
+@@ -134,7 +146,7 @@
+ int SetIOHandlers(struct mansession *s, char *ifmt, char *ofmt);
+ void destroy_session(struct mansession *s);
+ int ast_carefulwrite(int fd, char *s, int len, int timeoutms);
+-extern void *SendError(struct mansession *s, char *errmsg);
++extern void *SendError(struct mansession *s, char *errmsg, char *actionid);
+ 
+ int close_sock(int socket);
+ int ProxyChallenge(struct mansession *s, struct message *m);
+diff -durN astmanproxy-1.21/src/proxyfunc.c astmanproxy-1.21d/src/proxyfunc.c
+--- astmanproxy-1.21/src/proxyfunc.c	2006-07-01 16:43:37.000000000 +0100
++++ astmanproxy-1.21d/src/proxyfunc.c	2008-01-21 17:54:14.000000000 +0000
+@@ -76,9 +76,11 @@
+ 
+ int ProxyChallenge(struct mansession *s, struct message *m) {
+ 	struct message mo;
++	char *actionid;
+ 
++	actionid = astman_get_header(m, "ActionID");
+ 	if ( strcasecmp("MD5", astman_get_header(m, "AuthType")) ) {
+-		SendError(s, "Must specify AuthType");
++		SendError(s, "Must specify AuthType", actionid);
+ 		return 1;
+ 	}
+ 
+@@ -88,6 +90,8 @@
+ 	memset(&mo, 0, sizeof(struct message));
+ 	AddHeader(&mo, "Response: Success");
+ 	AddHeader(&mo, "Challenge: %s", s->challenge);
++	if( actionid && strlen(actionid) )
++		AddHeader(&mo, "ActionID: %s", actionid);
+ 
+ 	s->output->write(s, &mo);
+ 	return 0;
+@@ -147,13 +151,16 @@
+ void *ProxyLogin(struct mansession *s, struct message *m) {
+ 	struct message mo;
+ 	struct proxy_user *pu;
+-	char *user, *secret, *key;
++	char *user, *secret, *key, *actionid;
+ 
+ 	user = astman_get_header(m, "Username");
+ 	secret = astman_get_header(m, "Secret");
+ 	key = astman_get_header(m, "Key");
++	actionid = astman_get_header(m, "ActionID");
+ 
+ 	memset(&mo, 0, sizeof(struct message));
++	if( actionid && strlen(actionid) > 0 )
++		AddHeader(&mo, "ActionID: %s", actionid);
+ 	if( debug )
+ 		debugmsg("Login attempt as: %s/%s", user, secret);
+ 
+@@ -170,6 +177,8 @@
+ 				strcpy(s->user.channel, pu->channel);
+ 				strcpy(s->user.icontext, pu->icontext);
+ 				strcpy(s->user.ocontext, pu->ocontext);
++				strcpy(s->user.account, pu->account);
++				strcpy(s->user.server, pu->server);
+ 				pthread_mutex_unlock(&s->lock);
+ 				if( debug )
+ 					debugmsg("Login as: %s", user);
+@@ -181,7 +190,7 @@
+ 	pthread_mutex_unlock(&userslock);
+ 
+ 	if( !pu ) {
+-		SendError(s, "Authentication failed");
++		SendError(s, "Authentication failed", actionid);
+ 		pthread_mutex_lock(&s->lock);
+ 		s->authenticated = 0;
+ 		pthread_mutex_unlock(&s->lock);
+@@ -341,38 +350,224 @@
+ 	return 0;
+ }
+ 
++/* [do_]AddToStack - Stores an event in a stack for later repetition.
++		indexted on UniqueID.
++   If SrcUniqueID / DestUniqueID are present, store against both.
++   If a record already exists, do nothing.
++   withbody = 1, saves a copy of whole message (server).
++   withbody = 0, saves just the key (client).
++*/
++void do_AddToStack(char *uniqueid, struct message *m, struct mansession *s, int withbody)
++{
++	struct mstack *prev;
++	struct mstack *t;
++
++        pthread_mutex_lock(&s->lock);
++	prev = NULL;
++	t = s->stack;
++
++	while( t ) {
++		if( !strncmp( t->uniqueid, uniqueid, sizeof(t->uniqueid) ) )
++		{
++			pthread_mutex_unlock(&s->lock);
++			return;
++		}
++		prev = t;
++		t = t->next;
++	}
++	if( s->depth >= MAX_STACK ) {
++		struct mstack *newtop;
++
++		newtop = s->stack->next;
++		if( s->stack->message )
++			free( s->stack->message );
++		free( s->stack );
++		s->stack = newtop;
++		s->depth--;
++	}
++	if( (t = malloc(sizeof(struct mstack))) ) {
++		memset(t, 0, sizeof(struct mstack));
++		strncpy( t->uniqueid, uniqueid, sizeof(t->uniqueid) );
++		s->depth++;
++		if( prev )
++			prev->next = t;
++		else
++			s->stack = t;
++		if( withbody ) {
++			// Save the message, in a reduced form to save memory...
++			int m_size;
++			int i, j;
++			m_size = 1;
++			j = 0;
++			for( i = 0; i < m->hdrcount; i++ ) {
++				m_size += strlen(m->headers[i])+1;
++			}
++			if( m_size < MAX_STACKDATA && (t->message = malloc(m_size)) ) {
++				memset(t->message, 0, m_size);
++				for( i = 0; i < m->hdrcount; i++ ) {
++					strncpy( t->message, m->headers[i], m_size - j );
++				}
++			}
++		}
++		if( debug ) {
++			debugmsg("Added uniqueid: %s to %s stack", uniqueid, withbody?"server":"client");
++			if( t->message)
++				debugmsg("Cached message: %s", t->message);
++		}
++	}
++	pthread_mutex_unlock(&s->lock);
++}
++void AddToStack(struct message *m, struct mansession *s, int withbody)
++{
++	char *uniqueid;
++
++	uniqueid = astman_get_header(m, "Uniqueid");
++	if( uniqueid[0] != '\0' )
++		do_AddToStack(uniqueid, m, s, withbody);
++	uniqueid = astman_get_header(m, "SrcUniqueID");
++	if( uniqueid[0] != '\0' )
++		do_AddToStack(uniqueid, m, s, withbody);
++	uniqueid = astman_get_header(m, "DestUniqueID");
++	if( uniqueid[0] != '\0' )
++		do_AddToStack(uniqueid, m, s, withbody);
++}
++
++
++/* DelFromStack - Removes an item from the stack based on the UniqueID field.
++*/
++void DelFromStack(struct message *m, struct mansession *s)
++{
++	char *uniqueid;
++	struct mstack *prev;
++	struct mstack *t;
++
++	uniqueid = astman_get_header(m, "Uniqueid");
++	if( uniqueid[0] == '\0' )
++		return;
++
++        pthread_mutex_lock(&s->lock);
++	prev = NULL;
++	t = s->stack;
++
++	while( t ) {
++		if( !strncmp( t->uniqueid, uniqueid, sizeof(t->uniqueid) ) )
++		{
++			if( t->message )
++				free( t->message );
++			if( prev )
++				prev->next = t->next;
++			else
++				s->stack = t->next;
++			free( t );
++			s->depth--;
++			if( debug )
++				debugmsg("Removed uniqueid: %s from stack", uniqueid);
++			break;
++		}
++		prev = t;
++		t = t->next;
++	}
++        pthread_mutex_unlock(&s->lock);
++}
++
++/* FreeStack - Removes all items from stack.
++*/
++void FreeStack(struct mansession *s)
++{
++	struct mstack *t;
++
++        pthread_mutex_lock(&s->lock);
++	t = s->stack;
++
++	while( t ) {
++		if( t->message )
++			free( t->message );
++		free( t );
++		s->depth--;
++		t = t->next;
++	}
++	s->stack = NULL;
++        pthread_mutex_unlock(&s->lock);
++}
++
++/* IsInStack - If the message has a UniqueID, and it is in the stack...
++*/
++int IsInStack(char* uniqueid, struct mansession *s)
++{
++	struct mstack *t;
++
++        pthread_mutex_lock(&s->lock);
++	t = s->stack;
++
++	while( t ) {
++		if( !strncmp( t->uniqueid, uniqueid, sizeof(t->uniqueid) ) )
++		{
++			pthread_mutex_unlock(&s->lock);
++			return 1;
++		}
++		t = t->next;
++	}
++        pthread_mutex_unlock(&s->lock);
++	return 0;
++}
++
+ int ValidateAction(struct message *m, struct mansession *s, int inbound) {
+ 	char *channel, *channel1, *channel2;
+ 	char *context;
+ 	char *uchannel;
+ 	char *ucontext;
++	char *action;
++	char *account;
++	char *uniqueid;
+ 
+ 	if( pc.authrequired && !s->authenticated )
+ 		return 0;
+ 
+-	if( inbound )
++	if( inbound )	// Inbound to client from server
+ 		ucontext = s->user.icontext;
+-	else
++	else		// Outbound from client to server
+ 		ucontext = s->user.ocontext;
+ 	uchannel = s->user.channel;
+ 
+-	channel = astman_get_header(m, "Channel");
+-	if( channel[0] != '\0' && uchannel[0] != '\0' )
+-		if( strncasecmp( channel, uchannel, strlen(uchannel) ) ) {
+-			if( debug )
+-				debugmsg("Message filtered (chan): %s != %s", channel, uchannel);
+-			return 0;
+-		}
++	uniqueid = astman_get_header(m, "Uniqueid");
++	if( uniqueid[0] != '\0' && IsInStack(uniqueid, s) ) {
++		if( debug )
++			debugmsg("Message passed (uniqueid): %s already passed", uniqueid);
++		return 0;
++	}
+ 
+-	channel1 = astman_get_header(m, "Channel1");
+-	channel2 = astman_get_header(m, "Channel2");
+-	if( (channel1[0] != '\0' || channel2[0] != '\0') && uchannel[0] != '\0' )
+-		if( !(strncasecmp( channel1, uchannel, strlen(uchannel) ) == 0 ||
+-			  strncasecmp( channel2, uchannel, strlen(uchannel) ) == 0) ) {
+-			if( debug )
+-				debugmsg("Message filtered (chan): %s/%s != %s", channel1, channel2, uchannel);
+-			return 0;
++	if( uchannel[0] != '\0' ) {
++		channel = astman_get_header(m, "Channel");
++		if( channel[0] != '\0' ) {	// We have a Channel: header, so filter on it.
++			if( strncasecmp( channel, uchannel, strlen(uchannel) ) ) {
++				if( debug )
++					debugmsg("Message filtered (chan): %s != %s", channel, uchannel);
++				return 0;
++			}
++		} else {			// No Channel: header, what about Channel1: or Channel2: ?
++			channel1 = astman_get_header(m, "Channel1");
++			channel2 = astman_get_header(m, "Channel2");
++			if( channel1[0] != '\0' || channel2[0] != '\0' ) {
++				if( !(strncasecmp( channel1, uchannel, strlen(uchannel) ) == 0 ||
++					  strncasecmp( channel2, uchannel, strlen(uchannel) ) == 0) ) {
++					if( debug )
++						debugmsg("Message filtered (chan1/2): %s/%s != %s", channel1, channel2, uchannel);
++					return 0;
++				}
++			} else {		// No? What about Source: and Destination:
++				channel1 = astman_get_header(m, "Source");
++				channel2 = astman_get_header(m, "Destination");
++				if( channel1[0] != '\0' || channel2[0] != '\0' ) {
++					if( !(strncasecmp( channel1, uchannel, strlen(uchannel) ) == 0 ||
++						  strncasecmp( channel2, uchannel, strlen(uchannel) ) == 0) ) {
++						if( debug )
++							debugmsg("Message filtered (src/dst chan): %s/%s != %s", channel1, channel2, uchannel);
++						return 0;
++					}
++				}
++			}
+ 		}
++	}
+ 
+ 	context = astman_get_header(m, "Context");
+ 	if( context[0] != '\0' && ucontext[0] != '\0' )
+@@ -382,15 +577,38 @@
+ 			return 0;
+ 		}
+ 
++	action = astman_get_header(m, "Action");
++	if( s->user.account[0] != '\0' ) {
++		account = astman_get_header(m, "Account");
++		if( !strcasecmp( action, "Originate" ) ) {
++			if( debug )
++				debugmsg("Got Originate. Account: %s, setting to: %s", account, s->user.account);
++			if( account[0] == '\0' )
++				AddHeader(m, "Account: %s", s->user.account);
++			else
++				strcpy(account, s->user.account);
++		} else if( account[0] != '\0' ) {
++			if( debug )
++				debugmsg("Got Account: %s, setting to: %s", account, s->user.account);
++			strcpy(account, s->user.account);
++		}
++	}
++
++	if( inbound )
++		AddToStack(m, s, 0);
++// TODO: Send a retrospective Newchannel from the cache (m->session->cache) to this client (s)...
++// Probably best to do this by returning an indication that this will be necessary.
+ 	return 1;
+ }
+ 
+-void *SendError(struct mansession *s, char *errmsg) {
++void *SendError(struct mansession *s, char *errmsg, char *actionid) {
+ 	struct message m;
+ 
+ 	memset(&m, 0, sizeof(struct message));
+ 	AddHeader(&m, "Response: Error");
+ 	AddHeader(&m, "Message: %s", errmsg);
++	if( actionid && strlen(actionid) )
++		AddHeader(&m, "ActionID: %s", actionid);
+ 
+ 	s->output->write(s, &m);
+ 
+Binary files astmanproxy-1.21/ssl.o and astmanproxy-1.21d/ssl.o differ
+Binary files astmanproxy-1.21/standard.o and astmanproxy-1.21d/standard.o differ
+Binary files astmanproxy-1.21/standard.so and astmanproxy-1.21d/standard.so differ
+diff -durN astmanproxy-1.21/VERSIONS astmanproxy-1.21d/VERSIONS
+--- astmanproxy-1.21/VERSIONS	2006-07-01 16:46:02.000000000 +0100
++++ astmanproxy-1.21d/VERSIONS	2007-12-12 10:42:26.000000000 +0000
+@@ -1,3 +1,11 @@
++1.21c	Add "account" parameter to users file - Forces Account: header on Originate (Steve Davies)
++	Add "server" parameter to users file - equivalent to Server: line in requests (Steve Davies)
++	Allow multiple-logins by logging off when a 2nd Login action arrives (Steve Davies)
++	Include ActionID: in error responses and Login: responses (Steve Davies)
++	(ActivaTSP and some other products require this)
++	Client Timeout value was not being loaded (Wolfgang Pichler)
++
++------------------------------------------------------------------------------------------------
+ 1.21	Major code formatting cleanup and official release of 1.21pre (trunk)
+         Documentation overhaul & cleanup
+ 
+Binary files astmanproxy-1.21/xml.o and astmanproxy-1.21d/xml.o differ
+Binary files astmanproxy-1.21/xml.so and astmanproxy-1.21d/xml.so differ

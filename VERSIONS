@@ -1,0 +1,125 @@
+1.26
+	Additional filter options to pass.
+        brionly: Only Bridge events.
+        xfronly: Only Transfer events.
+        Combined ???only filters allow all matching types to pass.
+	Fix long standing crash due to insufficient locking.
+	Fix a couple of possible crash/core dump cases.
+	Enhanced packet replay code.
+	Fix autofilter option for ActionID filtering.
+	Fix replay filtering. Dial cmd seems to have changed.
+	Fix buffer code to handle v.v.v.long lines on input.
+		(Would hang data stream)
+
+1.25
+	Minor makefile tweak
+
+1.24pre110524
+	Improved I/O buffering for very busy systems.
+	Performance boost - No need to bzero quite so much.
+	Clean out server buffers before re-opening.
+	Shutdown tries to nicely clean up threads.
+	New forcebanner option to set the initial banner output.
+	Attempt to handle quoted values in config file.
+	Matching on context is now correctly case-sensitive.
+	Fix priority of cdronly and novar filters
+
+1.24pre110203 - Add new filter types per-user
+        cdronly: Only CDR events
+        novar: Block SetVar/VarSet events
+
+1.24pre090304 - Add -f option to run in foreground
+	support for Asterisk 1.6.x Channel: headers (Sebastian)
+	Re-factor the Channel: header matching code for simplicity (Steve Davies)
+
+1.22pre081119 - Refresh of GIT fork by Steve Davies
+	Add AutoFilter=unique option for better ActionID tracking (Steve Davies)
+	Add more_events option for users to get more "noise" (Steve Davies)
+
+1.22pre081111 - Refresh of GIT fork by Steve Davies
+	Segfault amd SIGPIPE fixes (Steve Davies)
+	Several fixes to UniqueID header tracking (Steve Davies)
+	Ensure that Response: headers are not filtered out. Assumes ActionID is sent (Steve Davies)
+
+1.22fork - GIT fork by Steve Davies for code merge
+	Add "account" parameter to users file - Forces Account: header on Originate (Steve Davies)
+	Add "server" parameter to users file - equivalent to Server: line in requests (Steve Davies)
+	Allow multiple-logins by logging off when a 2nd Login action arrives (Steve Davies)
+	  (Helps compatability with some Manager Panel products)
+	Include ActionID: in error responses and Login: responses (Steve Davies)
+	  (ActivaTSP and some other products require this)
+	Client Timeout value was not being loaded (Wolfgang Pichler)
+	Ensures that clients see all the right channel data (Steve Davies)
+	  Each server records a stack of NewChannel events
+	  Each client records which NewChannel events have been passed
+	  If a filtered session bridges channels, ensure that related NewChannel(s) are sent
+
+1.22pre current trunk
+
+1.21	Major code formatting cleanup and official release of 1.21pre (trunk)
+	Documentation overhaul & cleanup
+
+1.21pre	Added URLDecode routine to http.c to deal with URL-encoded GET/POST data
+	Fixed xml.c to better deal with cli/unparsed data
+	Cleaned up Makefile for better support of Mac OS X 10.4
+	Changed message to be dynamically allocated in HandleAsterisk; solved bus error on Mac OS X 10.4
+
+1.20	Cleanup and official release of 1.20pre
+
+1.20pre	Now using ast_carefulwrite for non-blocking writes to all sockets	
+	Added asteriskwritetimeout config setting for asterisk write timeout
+	Added clientwritetimeout config setting for client write timeout
+	Added support for astmanproxy.users user authentication (Steve Davies)
+	Added support for Action: Challenge/AuthType: MD5 authentication
+	Added challenge field to mansession structure for use by Action: Challenge
+	Added writetimeout var to mansession structure for use by ast_carefulwrite
+	Added SSL Support (Remco Treffkorn, Mahesh Karoshi, John Todd; Tello Corp)
+	Added 'usessl' option for connecting to asterisk servers
+	Fixed proxykey pointer bug (Steve Davies)
+	Ditched autodisconnect handler property in favor of inputcomplete/outputcomplete
+
+------------------------------------------------------------------------------------------------
+1.1pre2	Completely Modularized and Abstracted Input/Output formats
+	Cleaned up session write mutex code (Peter Loeppky)
+	Fixed message initialization bug -- using wrong sizeof
+	Added XML Input format
+	Added HTTP Input format
+	Added CSV Output format
+	Support for connections to an arbitrary number of Asterisk servers
+	Added retryinterval and maxretries to conf for reconnecting lost servers
+
+1.1pre3	Added _autodisconnect property for I/O handlers
+	Added _onconnect method for I/O handlers
+	Returned connection banner to standard input handler via _onconnect method
+
+1.1	Finalized /usr/lib/astmanproxy/modules for shared objects in Makefile
+	Added make uninstall target
+	Added fail on no I/O handlers loaded
+	Updated README, added samples dir
+1.11	Added ProxyAction ListServers (Richard Lyman)
+	Fixed output bug, excess terminators (Dennis Persson)
+1.12	Added support for bad/old-style Asterisk output (Ron Arts)
+	Tweaked for compatibility with Flash Operator Panel (Nicolas Gudino)
+1.13	Changed to read only /etc/asterisk/astmanproxy.conf and not ./astmanproxy.conf
+	Added a 'connected' field so we don't try to write to servers which are not yet connected
+	Exits when there are no servers able to connect
+	Doesn't attempt to re-connect to a server if we get 'Authentication failed'
+	Added a connection timeout by using connect_nonb
+	Confirmed support for x86-64 processors (added -fPIC; Jennifer Hales)
+	Added support for Mac OS X (Tested on 10.3.9); BSD may also work
+	Aborts on old config file format (detects incomplete server spec)
+
+------------------------------------------------------------------------------------------------
+0.99a	Initial Beta Release
+0.99b	Moved WriteXMLClient into xml.c
+	Fixed XML tag bug (Bryan Ballard)
+	Fixed ast_log instances
+1.0	First major release
+1.0a	Added minor Makefile changes
+	Added Debian package support (Tzafrir Cohen)
+1.0b	Action: logoff (lowercase) was not intercepted properly (Steven Blatchford)
+	Fixed SetOutputFormat documentation error (Steven Blatchford)
+1.0c	Intercept empty command blocks; do not pass to Asterisk
+	Added call for proxyerror routine, previously unreferenced
+	Intercept Action: Login; always authenticates and does not pass to *
+1.0d	Properly intercept SIGPIPE (Brian Jones)

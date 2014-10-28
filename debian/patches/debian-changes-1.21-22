@@ -1,0 +1,207 @@
+--- astmanproxy-1.21.orig/src/proxyfunc.c
++++ astmanproxy-1.21/src/proxyfunc.c
+@@ -15,6 +15,7 @@ extern struct mansession *sessions;
+ extern struct iohandler *iohandlers;
+ extern pthread_mutex_t serverlock;
+ extern pthread_mutex_t userslock;
++extern pthread_rwlock_t sessionlock;
+ 
+ void *ProxyListIOHandlers(struct mansession *s) {
+ 	struct message m;
+@@ -44,6 +45,7 @@ void *ProxyListSessions(struct mansessio
+ 	memset(&m, 0, sizeof(struct message));
+ 	AddHeader(&m, "ProxyResponse: Success");
+ 
++	pthread_rwlock_rdlock(&sessionlock);
+ 	c = sessions;
+ 	while (c && (m.hdrcount < MAX_HEADERS - 4) ) {
+ 		if (!c->server) {
+@@ -55,6 +57,8 @@ void *ProxyListSessions(struct mansessio
+ 			AddHeader(&m, "ProxyServerSession: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
+ 		c = c->next;
+ 	}
++	pthread_rwlock_unlock(&sessionlock);
++
+ 	s->output->write(s, &m);
+ 	return 0;
+ }
+@@ -274,12 +278,15 @@ int ProxyDropServer(struct mansession *s
+ 
+ 	memset(&mo, 0, sizeof(struct message));
+ 	value = astman_get_header(m, "Server");
++
++	pthread_rwlock_rdlock(&sessionlock);
+ 	srv = sessions;
+ 	while (*value && srv) {
+ 		if (srv->server && !strcmp(srv->server->ast_host, value))
+ 			break;
+ 		srv = srv->next;
+ 	}
++	pthread_rwlock_unlock(&sessionlock);
+ 
+ 	if (srv) {
+ 		destroy_session(srv);
+@@ -306,6 +313,7 @@ void *ProxyListServers(struct mansession
+ 	memset(&m, 0, sizeof(struct message));
+ 	AddHeader(&m, "ProxyResponse: Success");
+ 
++	pthread_rwlock_rdlock(&sessionlock);
+ 	c = sessions;
+ 	while (c) {
+ 		if (c->server) {
+@@ -317,6 +325,8 @@ void *ProxyListServers(struct mansession
+ 
+ 		c = c->next;
+ 	}
++	pthread_rwlock_unlock(&sessionlock);
++
+ 	s->output->write(s, &m);
+ 	return 0;
+ }
+--- astmanproxy-1.21.orig/src/astmanproxy.c
++++ astmanproxy-1.21/src/astmanproxy.c
+@@ -32,7 +32,7 @@ struct proxyconfig pc;
+ struct mansession *sessions = NULL;
+ struct iohandler *iohandlers = NULL;
+ 
+-pthread_mutex_t sessionlock;
++pthread_rwlock_t sessionlock;
+ pthread_mutex_t serverlock;
+ pthread_mutex_t userslock;
+ pthread_mutex_t loglock;
+@@ -72,7 +72,7 @@ void leave(int sig) {
+ 
+ 	if (debug)
+ 	debugmsg("Notifying and closing sessions");
+-	pthread_mutex_lock (&sessionlock);
++	pthread_rwlock_wrlock(&sessionlock);
+ 	while (sessions) {
+ 		c = sessions;
+ 		sessions = sessions->next;
+@@ -99,7 +99,7 @@ void leave(int sig) {
+ 		pthread_mutex_destroy(&c->lock);
+ 		free(c);
+ 	}
+-	pthread_mutex_unlock (&sessionlock);
++	pthread_rwlock_unlock(&sessionlock);
+ 
+ 	/* unload server list */
+ 	while (pc.serverlist) {
+@@ -129,7 +129,7 @@ void leave(int sig) {
+ 	logmsg("Proxy stopped; shutting down.");
+ 
+ 	fclose(proxylog);
+-	pthread_mutex_destroy(&sessionlock);
++	pthread_rwlock_destroy(&sessionlock);
+ 	pthread_mutex_destroy(&loglock);
+ 	pthread_mutex_destroy(&debuglock);
+ 	exit(sig);
+@@ -156,7 +156,7 @@ void destroy_session(struct mansession *
+ 	struct mansession *cur, *prev = NULL;
+ 	char iabuf[INET_ADDRSTRLEN];
+ 
+-	pthread_mutex_lock(&sessionlock);
++	pthread_rwlock_wrlock(&sessionlock);
+ 	cur = sessions;
+ 	while(cur) {
+ 		if (cur == s)
+@@ -176,7 +176,7 @@ void destroy_session(struct mansession *
+ 		free(s);
+ 	} else if (debug)
+ 		debugmsg("Trying to delete non-existent session %p?\n", s);
+-	pthread_mutex_unlock(&sessionlock);
++	pthread_rwlock_unlock(&sessionlock);
+ 
+ 	/* If there are no servers and no clients, why are we here? */
+ 	if (!sessions) {
+@@ -192,7 +192,6 @@ int WriteClients(struct message *m) {
+ 	char *event;
+ 	int valret, autofilter;
+ 
+-	c = sessions;
+ 
+ 	// We stash New Channel events in case they are filtered and need to be
+ 	// re-played at a later time. Hangup events also clean the list
+@@ -206,6 +205,9 @@ int WriteClients(struct message *m) {
+                 AddToStack(m, m->session, 2);
+                 is_nc = 1;      // Make sure we don't resend it from Stack.
+         }
++
++	pthread_rwlock_rdlock(&sessionlock);
++	c = sessions;
+ 	while (c) {
+ 		if ( c->server || m->hdrcount<2 ) {
+ 			if( debug > 4 && c->server )
+@@ -305,6 +307,7 @@ int WriteClients(struct message *m) {
+ 			debugmsg("Validate Filtered a message to a client");
+ 		c = c->next;
+ 	}
++	pthread_rwlock_unlock(&sessionlock);
+ 	if( !strcasecmp( event, "Hangup" ) ) {
+ 		DelFromStack(m, m->session);
+ 	}
+@@ -318,7 +321,6 @@ int WriteAsterisk(struct message *m) {
+ 	first = NULL;
+ 	dest = NULL;
+ 
+-	s = sessions;
+ 	u = m->session;
+ 
+ 	if( u->user.server[0] != '\0' )
+@@ -327,6 +329,8 @@ int WriteAsterisk(struct message *m) {
+ 		dest = astman_get_header(m, "Server");
+ 
+ 	if (debug && *dest) debugmsg("set destination: %s", dest);
++	pthread_rwlock_rdlock(&sessionlock);
++	s = sessions;
+ 	while ( s ) {
+ 		if ( s->server && (s->connected > 0) ) {
+ 			if ( !first )
+@@ -336,9 +340,10 @@ int WriteAsterisk(struct message *m) {
+ 		}
+ 		s = s->next;
+ 	}
+-
+ 	if (!s)
+-	s = first;	
++		s = first;	
++
++	pthread_rwlock_unlock(&sessionlock);
+ 
+ 	/* Check for no servers and empty block -- Don't pester Asterisk if it is one*/
+ 	if (!s || !s->server || (!m->hdrcount && !m->headers[0][0]) )
+@@ -583,10 +588,10 @@ int StartServer(struct ast_server *srv) 
+ 	s->sin.sin_port = htons(atoi(s->server->ast_port));
+ 	s->fd = socket(AF_INET, SOCK_STREAM, 0);
+ 
+-	pthread_mutex_lock(&sessionlock);
++	pthread_rwlock_wrlock(&sessionlock);
+ 	s->next = sessions;
+ 	sessions = s;
+-	pthread_mutex_unlock(&sessionlock);
++	pthread_rwlock_unlock(&sessionlock);
+ 
+ 	logmsg("Allocated Asterisk server session for %s", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr));
+ 	if (debug) {
+@@ -726,10 +731,10 @@ static void *accept_thread()
+ 		s->writetimeout = pc.clientwritetimeout;
+ 		s->server = NULL;
+ 
+-		pthread_mutex_lock(&sessionlock);
++		pthread_rwlock_wrlock(&sessionlock);
+ 		s->next = sessions;
+ 		sessions = s;
+-		pthread_mutex_unlock(&sessionlock);
++		pthread_rwlock_unlock(&sessionlock);
+ 
+ 		logmsg("Connection received from %s", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr));
+ 		if (debug) {
+@@ -800,7 +805,7 @@ int main(int argc, char *argv[])
+ 	(void) signal(SIGPIPE, SIG_IGN);
+ 
+ 	/* Initialize global mutexes */
+-	pthread_mutex_init(&sessionlock, NULL);
++	pthread_rwlock_init(&sessionlock, NULL);
+ 	pthread_mutex_init(&userslock, NULL);
+ 	pthread_mutex_init(&loglock, NULL);
+ 	pthread_mutex_init(&debuglock, NULL);

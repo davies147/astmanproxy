@@ -1,0 +1,25 @@
+--- astmanproxy-1.21.orig/src/astmanproxy.c
++++ astmanproxy-1.21/src/astmanproxy.c
+@@ -58,6 +58,9 @@ void leave(int sig) {
+ 	struct iohandler *io;
+ 	struct ast_server *srv;
+ 	char iabuf[INET_ADDRSTRLEN];
++	void *res;
++	struct timespec ts;
++
+ 
+ 	/* Message to send to servers */
+ 	memset(&sm, 0, sizeof(struct message));
+@@ -74,6 +77,12 @@ void leave(int sig) {
+ 		c = sessions;
+ 		sessions = sessions->next;
+ 
++		if( c->t ) {
++			ts.tv_sec = 1;	/* Timed join prevents us blocking */
++			ts.tv_nsec = 0;
++			pthread_cancel( c->t );
++			pthread_timedjoin_np( c->t, &res, &ts );
++		}
+ 		if (c->server) {
+ 			if (debug)
+ 				debugmsg("asterisk@%s: closing session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));

@@ -1,0 +1,43 @@
+--- astmanproxy-1.21.orig/src/common.c
++++ astmanproxy-1.21/src/common.c
+@@ -19,22 +19,26 @@ int get_input(struct mansession *s, char
+ 	/* output must have at least sizeof(s->inbuf) space */
+ 	int res;
+ 	int haveline;
+-	int x, y, xtra;
++	int x, y1, y2, xtra;
+ 	struct pollfd fds[1];
+ 	char iabuf[INET_ADDRSTRLEN];
+ 
+ 	/* Look for \r\n from the front, our preferred end of line */
+ 	haveline = 0;
++	*output = '\0';
+ #define MIN(a,b) (a<b?a:b)
+-	y = MIN(s->inoffset + s->inlen, s->inoffset + MAX_LEN - 1);
++	y1 = s->inoffset + s->inlen;
++	y2 = s->inoffset + MAX_LEN - 1;
++	/* y = MIN(s->inoffset + s->inlen, s->inoffset + MAX_LEN - 1); */
+ 	xtra = 0;
+-	for (x=s->inoffset; x < y; x++) {
++
++	for (x=s->inoffset; x < y1; x++) {
+ 		if (s->inbuf[x] == '\n') {
+ 			if (x > s->inoffset && s->inbuf[x-1] == '\r') {
+ 				xtra = 1;
+ 			}
+ 			/* Copy output data not including \r\n */
+-			memcpy(output, s->inbuf + s->inoffset, x - s->inoffset - xtra);
++			memcpy(output, s->inbuf + s->inoffset, MIN(x - s->inoffset - xtra, y2 - s->inoffset - xtra));
+ 			/* Add trailing \0 */
+ 			output[x - s->inoffset - xtra] = '\0';
+ 			/* Move remaining data back to the front */
+--- astmanproxy-1.21.orig/src/standard.c
++++ astmanproxy-1.21/src/standard.c
+@@ -18,6 +18,7 @@ int _read(struct mansession *s, struct m
+ 
+ 	for (;;) {
+ 		res = get_input(s, m->headers[m->hdrcount]);
++		if (debug>5) debugmsg("get_input returned line %d, res %d, %s", m->hdrcount + 1, res, m->headers[m->hdrcount]);
+ 
+ 		if (strstr(m->headers[m->hdrcount], "--END COMMAND--")) {
+ 				if (debug) debugmsg("Found END COMMAND");

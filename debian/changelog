@@ -1,0 +1,160 @@
+astmanproxy (1.26-3) unstable; urgency=low
+
+  * Attempt to understand Crypt'ed passwords
+
+ -- root <steved@ipcortex.co.uk>  Mon, 16 Apr 2012 14:36:49 +0100
+
+astmanproxy (1.26-2) unstable; urgency=low
+
+  * Potential segfault fix in ResendFromStack code.
+
+ -- root <steved@ipcortex.co.uk>  Mon, 16 Apr 2012 14:36:49 +0100
+
+astmanproxy (1.26-1) unstable; urgency=low
+
+  * Roll in minor tweaks from GitHub
+  * Whitespace fixes
+
+ -- root <steved@ipcortex.co.uk>  Wed,  4 Apr 2012 15:51:15 +0100
+
+astmanproxy (1.21-22) unstable; urgency=low
+
+  * Change sessionlock from MUTEX to RWLOCK
+  * Add several RDLOCK cases to prevent segfaults on connection close
+
+ -- root <steved@ipcortex.co.uk>  Thu, 22 Mar 2012 10:23:58 +0000
+
+astmanproxy (1.21-21) unstable; urgency=low
+
+  * Include latest "Newstate" with packet replay code.
+
+ -- root <steved@ipcortex.co.uk>  Thu,  8 Mar 2012 16:41:36 +0000
+
+astmanproxy (1.21-20) unstable; urgency=low
+
+  * Fix autofilter option for ActionID filtering.
+
+ -- root <steved@ipcortex.co.uk>  Thu,  8 Mar 2012 13:21:11 +0000
+
+astmanproxy (1.21-19) unstable; urgency=low
+
+  * Fix replay filtering. Dial cmd seems to have changed.
+
+ -- root <steved@ipcortex.co.uk>  Thu, 23 Feb 2012 11:46:53 +0000
+
+astmanproxy (1.21-18) unstable; urgency=low
+
+  * Fix buffer code to handle v.v.v.long lines on input.
+
+ -- root <steved@ipcortex.co.uk>  Wed, 22 Feb 2012 11:29:52 +0000
+
+astmanproxy (1.21-17) unstable; urgency=low
+
+  * Additional bounds checking on MAX_HEADERS to try and
+    catch a core dump.
+
+ -- root <steved@ipcortex.co.uk>  Tue, 21 Feb 2012 16:20:43 +0000
+
+astmanproxy (1.21-16) unstable; urgency=low
+
+  * New FILT_BRIONLY and FILT_XFRONLY rules
+
+ -- root <steved@ipcortex.co.uk>  Tue, 15 Nov 2011 10:22:13 +0000
+
+astmanproxy (1.21-15) unstable; urgency=low
+
+  * Clean up server connection buffer before trying
+    to connect.
+
+ -- root <steved@ipcortex.co.uk>  Mon, 31 Mar 2011 15:45:22 +0100
+
+astmanproxy (1.21-14) unstable; urgency=low
+
+  * Cancel threads before cleaning up their memory.
+
+ -- root <steved@ipcortex.co.uk>  Mon,  7 Mar 2011 11:02:06 +0000
+
+astmanproxy (1.21-13) unstable; urgency=low
+
+  * Increase the input buffer and optimise how the buffer is managed
+
+ -- root <steved@ipcortex.co.uk>  Fri, 18 Feb 2011 11:17:01 +0000
+
+astmanproxy (1.21-12) unstable; urgency=low
+
+  * Very busy systems can get backlogged on read buffers
+    Try to resolve this by polling for new data on every read.
+
+ -- root <steved@ipcortex.co.uk>  Thu, 17 Feb 2011 13:24:39 +0000
+
+astmanproxy (1.21-11) unstable; urgency=low
+
+  * Add FILT_CDRONLY and FILT_NOVAR options
+
+ -- root <steved@ipcortex.co.uk>  Thu,  3 Feb 2011 14:37:44 +0000
+
+astmanproxy (1.21-10) unstable; urgency=low
+
+  * Allow "account" header to be set without having filtering enabled.
+
+ -- root <steved@ipcortex.co.uk>  Tue, 16 Mar 2010 14:22:39 +0000
+
+astmanproxy (1.21-9) unstable; urgency=low
+
+  * Better approach to Channel: header searching.
+
+ -- root <steved@ipcortex.co.uk>  Tue, 26 May 2009 16:47:14 +0100
+
+astmanproxy (1.21-8) unstable; urgency=low
+
+  * Add 'forcebanner' option
+
+ -- root <steved@ipcortex.co.uk>  Tue,  3 Feb 2009 12:31:14 +0000
+
+astmanproxy (1.21-7) unstable; urgency=low
+
+  * Optimise TCP writes for standard.so
+  * Add new FilterLocal setting for filtering of Local/ originate
+    calls
+
+ -- root <steved@ipcortex.co.uk>  Tue,  4 Dec 2008 16:15:31 +0000
+
+astmanproxy (1.21-6) unstable; urgency=low
+
+  * Add new AutoFilter tracking option
+  * Add new more_events user option to pass unfilterable events
+    rather than blocking them
+
+ -- root <steved@ipcortex.co.uk>  Tue, 11 Nov 2008 12:08:20 +0000
+
+astmanproxy (1.21-5) unstable; urgency=low
+
+  * Fix 2 potential crashes
+
+ -- root <steved@ipcortex.co.uk>  Tue, 11 Nov 2008 12:08:20 +0000
+
+astmanproxy (1.21-4) unstable; urgency=low
+
+  * Bug fix update to 1.21e
+
+ -- root <steved@ipcortex.co.uk>  Wed, 31 Mar 2008 12:32:14 +0100
+
+astmanproxy (1.21-3) unstable; urgency=low
+
+  * Enhance and fix the filtering code to remember NewChannel events in
+    case they are needed later
+
+ -- root <steved@ipcortex.co.uk>  Wed, 23 Jan 2008 16:51:56 +0000
+
+astmanproxy (1.21-2) unstable; urgency=low
+
+  * Apply 1.21d patch to source tree
+
+ -- root <steved@ipcortex.co.uk>  Wed, 23 Jan 2008 16:51:56 +0000
+
+astmanproxy (1.21-1) unstable; urgency=low
+
+  * Initial release
+
+ -- root <steved@ipcortex.co.uk>  Tue, 11 Sep 2007 18:03:17 +0100
+
