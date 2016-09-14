@@ -1,0 +1,185 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ astmanproxy (1.26-8) unstable; urgency=low
+ .
+   * Detect s->dead more readily while waiting to read data.
+   * Set s->dead if any write operations fail.
+Author: root <steved@ipcortex.co.uk>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: http://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: <YYYY-MM-DD>
+
+--- astmanproxy-1.26.orig/src/standard.c
++++ astmanproxy-1.26/src/standard.c
+@@ -47,7 +47,7 @@ int _read(struct mansession *s, struct m
+ }
+ 
+ int _write(struct mansession *s, struct message *m) {
+-	int i;
++	int i, res;
+ 	char w_buf[1500];	// Usual size of an ethernet frame
+ 	int at;
+ 
+@@ -58,26 +58,32 @@ int _write(struct mansession *s, struct
+ 
+ 	if (debug>2) debugmsg("Transmitting standard block of %d lines, fd %d", m->hdrcount, s->fd);
+ 
+-	for (i=0; i<m->hdrcount; i++) {
++	for (i=0; !s->dead && i<m->hdrcount; i++) {
+ 		if( ! strlen(m->headers[i]) )
+ 			continue;
++		res = 0;
+ 		if( strlen(m->headers[i]) > 1480 || at + strlen(m->headers[i]) > 1480 )
+ 			if( at ) {
+-				ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
++				res = ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
+ 				at = 0;
+ 			}
+ 		if( strlen(m->headers[i]) > 1480 ) {
+-			ast_carefulwrite(s->fd, m->headers[i], strlen(m->headers[i]) , s->writetimeout);
+-			ast_carefulwrite(s->fd, "\r\n", 2, s->writetimeout);
++			res = ast_carefulwrite(s->fd, m->headers[i], strlen(m->headers[i]) , s->writetimeout);
++			if ( res >= 0 )
++				res = ast_carefulwrite(s->fd, "\r\n", 2, s->writetimeout);
+ 		} else {
+ 			memcpy( &w_buf[at], m->headers[i], strlen(m->headers[i]) );
+ 			memcpy( &w_buf[at+strlen(m->headers[i])], "\r\n", 2 );
+ 			at += strlen(m->headers[i]) + 2;
+ 		}
++		if ( res < 0 )
++			s->dead = 1;
+ 	}
+ 	memcpy( &w_buf[at], "\r\n", 2 );
+ 	at += 2;
+-	ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
++	res = ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
++	if ( res < 0 )
++		s->dead = 1;
+ 	pthread_mutex_unlock(&s->lock);
+ 
+ 	return 0;
+--- astmanproxy-1.26.orig/src/csv.c
++++ astmanproxy-1.26/src/csv.c
+@@ -13,15 +13,17 @@
+ /* TODO: catch and expand/handle commas in output */
+ 
+ int _write(struct mansession *s, struct message *m) {
+-	int i;
++	int i, res;
+ 	char outstring[MAX_LEN];
+ 
+ 	pthread_mutex_lock(&s->lock);
+-	for (i=0; i<m->hdrcount; i++) {
++	for (i=0; !s->dead && i<m->hdrcount; i++) {
+ 		sprintf(outstring, "\"%s\"", m->headers[i]);
+ 		if (i<m->hdrcount-1)
+ 			strcat(outstring, ", ");
+-		ast_carefulwrite(s->fd, outstring, strlen(outstring), s->writetimeout);
++		res = ast_carefulwrite(s->fd, outstring, strlen(outstring), s->writetimeout);
++		if (res < 0)
++			s->dead = 1;
+ 	}
+ 	ast_carefulwrite(s->fd, "\r\n\r\n", 4, s->writetimeout);
+ 	pthread_mutex_unlock(&s->lock);
+--- astmanproxy-1.26.orig/src/common.c
++++ astmanproxy-1.26/src/common.c
+@@ -70,7 +70,8 @@ int get_input(struct mansession *s, char
+ 
+ 	fds[0].events = POLLIN;
+ 	do {
+-		res = poll(fds, 1, haveline?0:-1);
++		/* The 1 second timeout is so that s->dead can be checked every so often */
++		res = poll(fds, 1, haveline ? 0 : 1000);
+ 		if (s->dead)
+ 			return -1;
+ 		if (res < 0) {
+@@ -89,7 +90,7 @@ int get_input(struct mansession *s, char
+ 				return -1;
+ 			break;
+ 
+-		}
++		} /* else res == 0 : timeout */
+ 	} while(!haveline);
+ 
+ 	/* We have some input, but it's not ready for processing */
+--- astmanproxy-1.26.orig/src/xml.c
++++ astmanproxy-1.26/src/xml.c
+@@ -67,7 +67,7 @@ void *setdoctag(char *tag, struct manses
+ }
+ 
+ int _write(struct mansession *s, struct message *m) {
+-	int i;
++	int i, res;
+ 	char buf[BUFSIZE], outstring[MAX_LEN*3], xmlescaped[MAX_LEN*3], xmldoctag[MAX_LEN];
+ 	char *dpos, *lpos;
+ 
+@@ -75,9 +75,11 @@ int _write(struct mansession *s, struct
+ 	sprintf(buf, "<%s>\r\n", xmldoctag);
+ 
+ 	pthread_mutex_lock(&s->lock);
+-	ast_carefulwrite(s->fd, buf, strlen(buf), s->writetimeout);
++	res = ast_carefulwrite(s->fd, buf, strlen(buf), s->writetimeout);
++	if ( res < 0 )
++		s->dead = 1;
+ 
+-	for (i=0; i<m->hdrcount; i++) {
++	for (i=0; !s->dead && i<m->hdrcount; i++) {
+ 		memset(xmlescaped, 0, sizeof xmlescaped);
+ 		xml_quote_string(m->headers[i], xmlescaped);
+ 		lpos = xmlescaped;
+@@ -90,10 +92,16 @@ int _write(struct mansession *s, struct
+ 			strcat(outstring, "\"/>\r\n");
+ 		} else
+ 			sprintf(outstring, " <%s Value=\"%s\"/>\r\n", XML_UNPARSED, lpos);
+-		ast_carefulwrite(s->fd, outstring, strlen(outstring), s->writetimeout);
++		res = ast_carefulwrite(s->fd, outstring, strlen(outstring), s->writetimeout);
++		if ( res < 0 )
++			s->dead = 1;
+ 	}
+ 	sprintf(buf, "</%s>\r\n\r\n", xmldoctag);
+-	ast_carefulwrite(s->fd, buf, strlen(buf), s->writetimeout);
++	if ( !s->dead ) {
++		res = ast_carefulwrite(s->fd, buf, strlen(buf), s->writetimeout);
++		if ( res < 0 )
++			s->dead = 1;
++	}
+ 	pthread_mutex_unlock(&s->lock);
+ 
+ 	return 0;
+--- astmanproxy-1.26.orig/src/http.c
++++ astmanproxy-1.26/src/http.c
+@@ -119,7 +119,7 @@ int ParseHTTPInput(char *buf, struct mes
+ 
+ int HTTPHeader(struct mansession *s, char *status) {
+ 
+-
++	int res;
+ 	time_t t;
+ 	struct tm tm;
+ 	char date[80];
+@@ -151,7 +151,9 @@ int HTTPHeader(struct mansession *s, cha
+ 
+ 	pthread_mutex_lock(&s->lock);
+ 	s->inputcomplete = 1;
+-	ast_carefulwrite(s->fd, hdr, strlen(hdr), s->writetimeout);
++	res = ast_carefulwrite(s->fd, hdr, strlen(hdr), s->writetimeout);
++	if ( res < 0 )
++		s->dead = 1;
+ 	pthread_mutex_unlock(&s->lock);
+ 	debugmsg("http header: %s", hdr);
+ 

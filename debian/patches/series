@@ -7,3 +7,4 @@ fullybooted
 segv_on_exit
 stack_memleak_fix
 crash_and_security_fix
+stuck_threads_fix
