@@ -1,3 +1,30 @@
+astmanproxy (1.26-7) unstable; urgency=low
+
+  * Disable ProxyActions (security)
+  * Fix a potential crash bug
+
+ -- root <steved@ipcortex.co.uk>  Fri, 14 Aug 2015 10:26:09 +0100
+
+astmanproxy (1.26-6) unstable; urgency=low
+
+  * Clean up memory leak in msg-stack code.
+
+ -- root <steved@ipcortex.co.uk>  Wed, 24 Jun 2015 17:01:32 +0100
+
+astmanproxy (1.26-5) unstable; urgency=low
+
+  * Clean up an unclean exit with segfault
+
+ -- root <steved@ipcortex.co.uk>  Wed, 10 Jun 2015 11:02:19 +0100
+
+astmanproxy (1.26-4) unstable; urgency=low
+
+  * Require "FullyBooted" before an Asterisk connection is considered 'live'
+  * Require at least 1 live Asterisk server before client processing starts
+  * Allow 5 seconds when Client connects for Asterisk to become live
+
+ -- root <steved@ipcortex.co.uk>  Mon, 16 Apr 2012 14:36:49 +0100
+
 astmanproxy (1.26-3) unstable; urgency=low
 
   * Attempt to understand Crypt'ed passwords

@@ -71,10 +71,10 @@ int get_input(struct mansession *s, char *output)
 	fds[0].events = POLLIN;
 	do {
 		res = poll(fds, 1, haveline?0:-1);
+		if (s->dead)
+			return -1;
 		if (res < 0) {
 			if (errno == EINTR) {
-				if (s->dead)
-					return -1;
 				continue;
 			}
 			if (debug)

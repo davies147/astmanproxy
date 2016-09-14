@@ -3,3 +3,7 @@ debian-changes-1.26-2
 Crypt-passwords
 Buffer-overflow
 add-local-crypt
+fullybooted
+segv_on_exit
+stack_memleak_fix
+crash_and_security_fix

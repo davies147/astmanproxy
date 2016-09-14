@@ -72,18 +72,15 @@ void leave(int sig) {
 	AddHeader(&cm, PROXY_SHUTDOWN);
 
 	if (debug)
-	debugmsg("Notifying and closing sessions");
+		debugmsg("Notifying and closing sessions");
 	pthread_rwlock_wrlock(&sessionlock);
 	while (sessions) {
 		c = sessions;
 		sessions = sessions->next;
 
-		if( c->t ) {
-			ts.tv_sec = 1;	/* Timed join prevents us blocking */
-			ts.tv_nsec = 0;
-			pthread_cancel( c->t );
-			pthread_timedjoin_np( c->t, &res, &ts );
-		}
+		pthread_mutex_lock(&c->lock);
+		c->dead = 1;
+		pthread_mutex_unlock(&c->lock);
 		if (c->server) {
 			if (debug)
 				debugmsg("asterisk@%s: closing session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
@@ -94,6 +91,12 @@ void leave(int sig) {
 				debugmsg("client@%s: closing session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
 			c->output->write(c, &cm);
 			logmsg("Shutdown, closed client %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
+		}
+		if( c->t ) {
+			ts.tv_sec = 1;	/* Timed join prevents us blocking */
+			ts.tv_nsec = 0;
+			pthread_cancel( c->t );
+			pthread_timedjoin_np( c->t, &res, &ts );
 		}
 		close_sock(c->fd);	/* close tcp & ssl socket */
 		FreeStack(c);
@@ -334,7 +337,7 @@ int WriteAsterisk(struct message *m) {
 	pthread_rwlock_rdlock(&sessionlock);
 	s = sessions;
 	while ( s ) {
-		if ( s->server && (s->connected > 0) ) {
+		if ( s->server && (s->connected > 1) ) {
 			if ( !first )
 				first = s;
 			if (*dest && !strcasecmp(dest, s->server->ast_host) )
@@ -373,8 +376,10 @@ void *setactionid(char *actionid, struct message *m, struct mansession *s)
 /* Handles proxy client sessions; closely based on session_do from asterisk's manager.c */
 void *session_do(struct mansession *s)
 {
+	struct mansession *svrs = NULL;
 	struct message m;
 	int res;
+	int tries = 5;
 	char *proxyaction, *actionid, *action, *key;
 
 	if (s->input->onconnect)
@@ -390,7 +395,25 @@ void *session_do(struct mansession *s)
 	// Signal settings are not always inherited by threads, so ensure we ignore this one
 	// as it is handled through error returns
 	(void) signal(SIGPIPE, SIG_IGN);
-	for (;;) {
+
+	// Make a valiant effort to wait for an Asterisk connection to be fullybooted.
+	// Bail if not done in 5 seconds.
+
+	while( tries-- ) {
+		pthread_rwlock_rdlock(&sessionlock);
+		svrs = sessions;
+		while ( svrs ) {
+			if ( svrs->server && (svrs->connected > 1) )
+				break;
+			svrs = svrs->next;
+		}
+		pthread_rwlock_unlock(&sessionlock);
+		if ( svrs )
+			break;
+		sleep(1);
+	}
+
+	for (;svrs;) {
 		/* Get a complete message block from input handler */
 		memset( &m, 0, sizeof(struct message) );
 		if (debug > 3)
@@ -422,8 +445,10 @@ void *session_do(struct mansession *s)
 				ProxyLogoff(s, &m);
 			else if ( !strcasecmp(action, "Challenge") )
 				ProxyChallenge(s, &m);
+/* Proxyaction is just a huge security issue
 			else if ( !(*proxyaction == '\0') )
 				proxyaction_do(proxyaction, &m, s);
+*/
 			else if ( ValidateAction(&m, s, 0) ) {
 				if ( !(*actionid == '\0') )
 					setactionid(actionid, &m, s);
@@ -482,6 +507,14 @@ void *HandleAsterisk(struct mansession *s)
 				if ( !strcmp("Authentication failed", astman_get_header(m, "Message")) ) {
 					s->connected = -1;
 				}
+				continue;
+			} else if ( s->connected == 1 ) {
+				if ( !strcmp("FullyBooted", astman_get_header(m, "Event")) ) {
+					s->connected = 2;
+					if (debug)
+					debugmsg("asterisk@%s: connected successfully!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+				} else
+					continue;
 			}
 
 			m->session = s;
