@@ -1,3 +1,10 @@
+astmanproxy (1.26-8) unstable; urgency=low
+
+  * Detect s->dead more readily while waiting to read data.
+  * Set s->dead if any write operations fail.
+
+ -- root <steved@ipcortex.co.uk>  Wed, 14 Sep 2016 14:43:24 +0100
+
 astmanproxy (1.26-7) unstable; urgency=low
 
   * Disable ProxyActions (security)

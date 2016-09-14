@@ -70,7 +70,8 @@ int get_input(struct mansession *s, char *output)
 
 	fds[0].events = POLLIN;
 	do {
-		res = poll(fds, 1, haveline?0:-1);
+		/* The 1 second timeout is so that s->dead can be checked every so often */
+		res = poll(fds, 1, haveline ? 0 : 1000);
 		if (s->dead)
 			return -1;
 		if (res < 0) {
@@ -89,7 +90,7 @@ int get_input(struct mansession *s, char *output)
 				return -1;
 			break;
 
-		}
+		} /* else res == 0 : timeout */
 	} while(!haveline);
 
 	/* We have some input, but it's not ready for processing */

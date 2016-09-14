@@ -47,7 +47,7 @@ int _read(struct mansession *s, struct message *m) {
 }
 
 int _write(struct mansession *s, struct message *m) {
-	int i;
+	int i, res;
 	char w_buf[1500];	// Usual size of an ethernet frame
 	int at;
 
@@ -58,26 +58,32 @@ int _write(struct mansession *s, struct message *m) {
 
 	if (debug>2) debugmsg("Transmitting standard block of %d lines, fd %d", m->hdrcount, s->fd);
 
-	for (i=0; i<m->hdrcount; i++) {
+	for (i=0; !s->dead && i<m->hdrcount; i++) {
 		if( ! strlen(m->headers[i]) )
 			continue;
+		res = 0;
 		if( strlen(m->headers[i]) > 1480 || at + strlen(m->headers[i]) > 1480 )
 			if( at ) {
-				ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
+				res = ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
 				at = 0;
 			}
 		if( strlen(m->headers[i]) > 1480 ) {
-			ast_carefulwrite(s->fd, m->headers[i], strlen(m->headers[i]) , s->writetimeout);
-			ast_carefulwrite(s->fd, "\r\n", 2, s->writetimeout);
+			res = ast_carefulwrite(s->fd, m->headers[i], strlen(m->headers[i]) , s->writetimeout);
+			if ( res >= 0 )
+				res = ast_carefulwrite(s->fd, "\r\n", 2, s->writetimeout);
 		} else {
 			memcpy( &w_buf[at], m->headers[i], strlen(m->headers[i]) );
 			memcpy( &w_buf[at+strlen(m->headers[i])], "\r\n", 2 );
 			at += strlen(m->headers[i]) + 2;
 		}
+		if ( res < 0 )
+			s->dead = 1;
 	}
 	memcpy( &w_buf[at], "\r\n", 2 );
 	at += 2;
-	ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
+	res = ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
+	if ( res < 0 )
+		s->dead = 1;
 	pthread_mutex_unlock(&s->lock);
 
 	return 0;

@@ -119,7 +119,7 @@ int ParseHTTPInput(char *buf, struct message *m) {
 
 int HTTPHeader(struct mansession *s, char *status) {
 
-
+	int res;
 	time_t t;
 	struct tm tm;
 	char date[80];
@@ -151,7 +151,9 @@ int HTTPHeader(struct mansession *s, char *status) {
 
 	pthread_mutex_lock(&s->lock);
 	s->inputcomplete = 1;
-	ast_carefulwrite(s->fd, hdr, strlen(hdr), s->writetimeout);
+	res = ast_carefulwrite(s->fd, hdr, strlen(hdr), s->writetimeout);
+	if ( res < 0 )
+		s->dead = 1;
 	pthread_mutex_unlock(&s->lock);
 	debugmsg("http header: %s", hdr);
 
