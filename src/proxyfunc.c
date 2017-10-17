@@ -698,6 +698,7 @@ int ValidateAction(struct message *m, struct mansession *s, int inbound) {
 	char *action;
 	char *actionid;
 	char *event;
+	char *application;
 	char *response;
 	char *account;
 	char *uniqueid;
@@ -705,7 +706,8 @@ int ValidateAction(struct message *m, struct mansession *s, int inbound) {
 	char *unmatched;
 	char *cheaders[] = {"Channel","Channel1","Channel2","Source","Destination","DestinationChannel","ChannelCalling",NULL};
 	char *uheaders[] = {"UniqueID","Uniqueid1","Uniqueid2","SrcUniqueId","DestUniqueID",NULL};
-	int i, cmatched, cfound, ufound;
+	char *appnames[] = {"Voicemail","VoicemailMain","Echo","Playback","Background","Agi","EAgi","DeadAgi","Read","Meetme","Chanspy",NULL};
+	int i, j, cmatched, cfound, ufound;
 
 	if( debug > 5 )
 		debugmsg("ValidateAction called for fd: %d, %s", s->fd, inbound?"inbound":"outbound");
@@ -759,7 +761,11 @@ int ValidateAction(struct message *m, struct mansession *s, int inbound) {
 			}
 		}
 		if( s->user.filter_bits & FILT_NOVAR ) {
-			if( !strcasecmp( event, "SetVar" ) ) {
+			if( !strcasecmp( event, "Set" ) ) {
+				if( debug )
+					debugmsg("NOVAR set. Blocked Set");
+				return 0;
+			} else if( !strcasecmp( event, "SetVar" ) ) {
 				if( debug )
 					debugmsg("NOVAR set. Blocked SetVar");
 				return 0;
@@ -768,6 +774,18 @@ int ValidateAction(struct message *m, struct mansession *s, int inbound) {
 					debugmsg("NOVAR set. Blocked VarSet");
 				return 0;
 			}
+		}
+		if( (s->user.filter_bits & FILT_ASTERIX) && !strcasecmp( event, "NewExten" )) {
+			i = 0;
+			application = astman_get_header(m, "Application");
+			for( j=0; application != '\0' && appnames[j] != NULL; j++ ) {
+				if( !strcasecmp( application, appnames[j] ) ) {
+					i = 1;
+					break;
+				}
+			}
+			if( i == 0 && debug )
+				debugmsg("FILT_ASTERIX set. Blocked Application: %s", application);
 		}
 	}
 	if( i == 0 ) {
@@ -943,4 +961,47 @@ void *SendError(struct mansession *s, char *errmsg, char *actionid) {
 	s->output->write(s, &m);
 
 	return 0;
+}
+
+extern struct message *do_asterix_filt(struct message *m) {
+	int i;
+	char *tmp;
+	struct message *res;
+	char *headers[] = {
+				"Response","Event","ActionID","Channeltype","ObjectName","ChanObjectType","IPaddress","IPport",
+				"Dynamic","Status","RegExpire","Address-IP","Address-Port","SIP-Useragent","Reg-Contact","VoiceMailbox",
+				NULL
+			};
+
+	tmp = astman_get_header(m, "ActionID");				/* Has no ActionID */
+	if( tmp[0] == '\0' )
+		return m;
+	tmp = astman_get_header(m, "ChannelType");			/* Has no ChannelType, or not 'SIP' */
+	if( tmp[0] == '\0' || strcasecmp( tmp, "SIP" ) )
+		return m;
+	tmp = astman_get_header(m, "ChanObjectType");			/* Has no ChanObjectType, or not 'peer' */
+	if( tmp[0] == '\0' || strcasecmp( tmp, "peer" ) )
+		return m;
+	tmp = astman_get_header(m, "Response");
+	if( tmp[0] == '\0' || strcasecmp( tmp, "Success" ) ) {		/* Not a Result: Success */
+		tmp = astman_get_header(m, "Event");
+		if( tmp[0] == '\0' || strcasecmp( tmp, "PeerEntry" ) )	/* And not an Event: PeerEntry */
+			return m;
+	}
+
+	/* Duplicate and modify (reduce) the original frame to save bandwidth */
+
+        if (! (res = malloc(sizeof(struct message))) )
+                return m;
+	res->hdrcount = 0;
+	res->in_command = 0;
+	res->session = m->session;
+	for( i=0; headers[i] != NULL; i++ ) {
+		tmp = astman_get_header(m, headers[i]);
+		if( tmp[0] == '\0' )
+			continue;	// No header by that name.
+		AddHeader(res, "%s: %s", headers[i], tmp);
+	}
+
+	return res;
 }

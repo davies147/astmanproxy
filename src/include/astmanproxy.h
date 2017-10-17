@@ -70,12 +70,14 @@ struct proxy_user {
 #define FILT_TOK_BRIONLY "brionly"
 #define FILT_TOK_XFRONLY "xfronly"
 #define FILT_TOK_NOVAR   "novar"
+#define FILT_TOK_ASTERIX "asterix"
 
 enum filters {
 	FILT_CDRONLY = (1 << 0),	/* Only pass CDR events. Nothing else (except other FILT_???ONLY). */
 	FILT_BRIONLY = (1 << 1),	/* Only pass Bridge events. Nothing else (except other FILT_???ONLY). */
 	FILT_XFRONLY = (1 << 2),	/* Only pass Transfer events. Nothing else (except other FILT_???ONLY). */
 	FILT_NOVAR =   (1 << 3),	/* Never send SetVar/VarSet events to this client */
+	FILT_ASTERIX = (1 << 4),	/* Asterix mode */
 };
 
 struct proxyconfig {
@@ -171,7 +173,7 @@ int get_input_block(struct mansession *s, struct message *m);
 int get_input(struct mansession *s, char *output);
 int SetIOHandlers(struct mansession *s, char *ifmt, char *ofmt);
 void destroy_session(struct mansession *s);
-int ast_carefulwrite(int fd, char *s, int len, int timeoutms);
+int ast_carefulwrite(struct mansession *c, char *s, int len);
 extern void *SendError(struct mansession *s, char *errmsg, char *actionid);
 
 int close_sock(int socket);

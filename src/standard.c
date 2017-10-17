@@ -56,7 +56,8 @@ int _write(struct mansession *s, struct message *m) {
 	at = 0;
 	pthread_mutex_lock(&s->lock);
 
-	if (debug>2) debugmsg("Transmitting standard block of %d lines, fd %d", m->hdrcount, s->fd);
+	if (debug>2)
+		debugmsg("Transmitting standard block of %d lines, fd %d", m->hdrcount, s->fd);
 
 	for (i=0; !s->dead && i<m->hdrcount; i++) {
 		if( ! strlen(m->headers[i]) )
@@ -64,13 +65,13 @@ int _write(struct mansession *s, struct message *m) {
 		res = 0;
 		if( strlen(m->headers[i]) > 1480 || at + strlen(m->headers[i]) > 1480 )
 			if( at ) {
-				res = ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
+				res = ast_carefulwrite(s, w_buf, at);
 				at = 0;
 			}
 		if( strlen(m->headers[i]) > 1480 ) {
-			res = ast_carefulwrite(s->fd, m->headers[i], strlen(m->headers[i]) , s->writetimeout);
+			res = ast_carefulwrite(s, m->headers[i], strlen(m->headers[i]));
 			if ( res >= 0 )
-				res = ast_carefulwrite(s->fd, "\r\n", 2, s->writetimeout);
+				res = ast_carefulwrite(s, "\r\n", 2);
 		} else {
 			memcpy( &w_buf[at], m->headers[i], strlen(m->headers[i]) );
 			memcpy( &w_buf[at+strlen(m->headers[i])], "\r\n", 2 );
@@ -79,11 +80,13 @@ int _write(struct mansession *s, struct message *m) {
 		if ( res < 0 )
 			s->dead = 1;
 	}
-	memcpy( &w_buf[at], "\r\n", 2 );
-	at += 2;
-	res = ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
-	if ( res < 0 )
-		s->dead = 1;
+	if (!s->dead) {
+		memcpy( &w_buf[at], "\r\n", 2 );
+		at += 2;
+		res = ast_carefulwrite(s, w_buf, at);
+		if ( res < 0 )
+			s->dead = 1;
+		}
 	pthread_mutex_unlock(&s->lock);
 
 	return 0;
@@ -99,7 +102,7 @@ int _onconnect(struct mansession *s, struct message *m) {
 		sprintf(banner, "%s/%s\r\n", PROXY_BANNER, PROXY_VERSION);
 	}
 	pthread_mutex_lock(&s->lock);
-	ast_carefulwrite(s->fd, banner, strlen(banner), s->writetimeout);
+	ast_carefulwrite(s, banner, strlen(banner));
 	pthread_mutex_unlock(&s->lock);
 
 	return 0;

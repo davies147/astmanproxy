@@ -82,6 +82,8 @@ void *add_userperm(char* username, char *userspec, struct proxy_user **pu) {
 		user->filter_bits |= FILT_XFRONLY;
 	if( strcasestr(user->filters, FILT_TOK_NOVAR) )
 		user->filter_bits |= FILT_NOVAR;
+	if( strcasestr(user->filters, FILT_TOK_ASTERIX) )
+		user->filter_bits |= FILT_ASTERIX;
 
 	user->next = *pu;
 	*pu = user;

@@ -25,6 +25,7 @@ extern int  AddToStack(struct message *m, struct mansession *s, int withbody);
 extern void DelFromStack(struct message *m, struct mansession *s);
 extern void FreeStack(struct mansession *s);
 extern void ResendFromStack(char* uniqueid, struct mansession *s, struct message *m, struct message *m2);
+extern struct message *do_asterix_filt(struct message *m);
 
 int ConnectAsterisk(struct mansession *s);
 
@@ -300,8 +301,19 @@ int WriteClients(struct message *m) {
 				if( m_temp2.hdrcount )
 					c->output->write(c, &m_temp2);
  			}
-			if( autofilter != 0 )
-				c->output->write(c, m);
+			if( autofilter != 0 ) {
+				if ( c->user.filter_bits & FILT_ASTERIX ) {
+					/* do_asterix_filt() allocates and retuens a new message struct if necessary */
+					/* And can return NULL to indicate a discard */
+					struct message *res = do_asterix_filt(m);
+					if ( res ) {
+						c->output->write(c, res);
+						if ( res != m )
+							free(res);
+					}
+				} else
+					c->output->write(c, m);
+			}
 
 			if (c->inputcomplete) {
 				pthread_mutex_lock(&c->lock);
@@ -426,13 +438,13 @@ void *session_do(struct mansession *s)
 		if (res > 0) {
 			/* Check for anything that requires proxy-side processing */
 			if (pc.key[0] != '\0' && !s->authenticated) {
-			key = astman_get_header(&m, "ProxyKey");
-			if (!strcmp(key, pc.key) ) {
-				pthread_mutex_lock(&s->lock);
-				s->authenticated = 1;
-				pthread_mutex_unlock(&s->lock);
-			} else
-				break;
+				key = astman_get_header(&m, "ProxyKey");
+				if (!strcmp(key, pc.key) ) {
+					pthread_mutex_lock(&s->lock);
+					s->authenticated = 1;
+					pthread_mutex_unlock(&s->lock);
+				} else
+					break;
 			}
 
 			proxyaction = astman_get_header(&m, "ProxyAction");
@@ -502,7 +514,7 @@ void *HandleAsterisk(struct mansession *s)
 				if ( !strcmp("Authentication accepted", astman_get_header(m, "Message")) ) {
 					s->connected = 1;
 					if (debug)
-					debugmsg("asterisk@%s: connected successfully!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+						debugmsg("asterisk@%s: connected successfully!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
 				}
 				if ( !strcmp("Authentication failed", astman_get_header(m, "Message")) ) {
 					s->connected = -1;
@@ -512,7 +524,7 @@ void *HandleAsterisk(struct mansession *s)
 				if ( !strcmp("FullyBooted", astman_get_header(m, "Event")) ) {
 					s->connected = 2;
 					if (debug)
-					debugmsg("asterisk@%s: connected successfully!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+						debugmsg("asterisk@%s: connected successfully!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
 				} else
 					continue;
 			}
@@ -548,8 +560,8 @@ int ConnectAsterisk(struct mansession *s) {
 	/* Don't try to do this if auth has already failed! */
 	if (s->connected < 0 )
 		return 1;
-	else
-		s->connected = 0;
+	s->connected = 0;
+	s->dead = 0;
 
 	if (debug)
 	debugmsg("asterisk@%s: Connecting (u=%s, p=%s, ssl=%s)", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr),
@@ -557,10 +569,6 @@ int ConnectAsterisk(struct mansession *s) {
 
 	/* Construct auth message just once */
 	memset( &m, 0, sizeof(struct message) );
-	AddHeader(&m, "Action: Login");
-	AddHeader(&m, "Username: %s", s->server->ast_user);
-	AddHeader(&m, "Secret: %s", s->server->ast_pass);
-	AddHeader(&m, "Events: %s", s->server->ast_events);
 
 	s->inlen = 0;
 	s->inoffset = 0;
@@ -577,7 +585,16 @@ int ConnectAsterisk(struct mansession *s) {
 			} else
 				sleep(pc.retryinterval);
 		} else {
-			/* Send login */
+			/* Send login, ensure message object is clean first. */
+			m.hdrcount = 0;
+			m.in_command = 0;
+			m.session = s;
+
+			AddHeader(&m, "Action: Login");
+			AddHeader(&m, "Username: %s", s->server->ast_user);
+			AddHeader(&m, "Secret: %s", s->server->ast_pass);
+			AddHeader(&m, "Events: %s", s->server->ast_events);
+
 			s->output->write(s, &m);
 			res = 0;
 			break;

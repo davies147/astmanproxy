@@ -1,3 +1,29 @@
+astmanproxy (1.26-12) unstable; urgency=low
+
+  * Remember to clear s->dead when reconnecting to Asterisk
+  * Don't send closing cr/lf on a dead connection.
+
+ -- root <steved@ipcortex.co.uk>  Fri, 13 Jan 2017 16:33:16 +0000
+
+astmanproxy (1.26-11) unstable; urgency=low
+
+  * FILT_ASTERIX now filters Event: NewExten
+
+ -- root <steved@ipcortex.co.uk>  Thu, 12 Jan 2017 17:00:53 +0000
+
+astmanproxy (1.26-10) unstable; urgency=low
+
+  * Simplify ast_carefulwrite calling params
+  * Attempt to clean-up relogin mechanism
+
+ -- root <steved@ipcortex.co.uk>  Thu, 12 Jan 2017 10:21:34 +0000
+
+astmanproxy (1.26-9) unstable; urgency=low
+
+  * Add FILT_ASTERIX mode
+
+ -- root <steved@ipcortex.co.uk>  Wed, 11 Jan 2017 17:51:18 +0000
+
 astmanproxy (1.26-8) unstable; urgency=low
 
   * Detect s->dead more readily while waiting to read data.

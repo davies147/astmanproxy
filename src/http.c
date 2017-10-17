@@ -151,7 +151,7 @@ int HTTPHeader(struct mansession *s, char *status) {
 
 	pthread_mutex_lock(&s->lock);
 	s->inputcomplete = 1;
-	res = ast_carefulwrite(s->fd, hdr, strlen(hdr), s->writetimeout);
+	res = ast_carefulwrite(s, hdr, strlen(hdr));
 	if ( res < 0 )
 		s->dead = 1;
 	pthread_mutex_unlock(&s->lock);

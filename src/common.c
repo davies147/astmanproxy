@@ -140,11 +140,13 @@ const char *ast_inet_ntoa(char *buf, int bufsiz, struct in_addr ia)
 	it on a file descriptor that _DOES_ have NONBLOCK set.  This way,
 	there is only one system call made to do a write, unless we actually
 	have a need to wait.  This way, we get better performance. */
-int ast_carefulwrite(int fd, char *s, int len, int timeoutms)
+int ast_carefulwrite(struct mansession *c, char *s, int len)
 {
 	/* Try to write string, but wait no more than ms milliseconds
 		before timing out */
 	int res=0;
+	int fd = c->fd;
+	int timeoutms = c->writetimeout;
 	struct pollfd fds[1];
 	while(len) {
 		res = m_send(fd, s, len);
