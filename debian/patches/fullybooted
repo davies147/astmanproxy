@@ -1,0 +1,93 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ astmanproxy (1.26-4) unstable; urgency=low
+ .
+   * Require "FullyBooted" before an Asterisk connection is considered 'live'
+   * Require at least 1 live Asterisk server before client processing starts
+   * Allow 5 seconds when Client connects for Asterisk to become live
+Author: root <steved@ipcortex.co.uk>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: http://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: <YYYY-MM-DD>
+
+Index: astmanproxy-1.26/src/astmanproxy.c
+===================================================================
+--- astmanproxy-1.26.orig/src/astmanproxy.c	2015-06-09 11:49:38.000000000 +0100
++++ astmanproxy-1.26/src/astmanproxy.c	2015-06-09 12:11:42.158701199 +0100
+@@ -334,7 +334,7 @@
+ 	pthread_rwlock_rdlock(&sessionlock);
+ 	s = sessions;
+ 	while ( s ) {
+-		if ( s->server && (s->connected > 0) ) {
++		if ( s->server && (s->connected > 1) ) {
+ 			if ( !first )
+ 				first = s;
+ 			if (*dest && !strcasecmp(dest, s->server->ast_host) )
+@@ -373,8 +373,10 @@
+ /* Handles proxy client sessions; closely based on session_do from asterisk's manager.c */
+ void *session_do(struct mansession *s)
+ {
++	struct mansession *svrs = NULL;
+ 	struct message m;
+ 	int res;
++	int tries = 5;
+ 	char *proxyaction, *actionid, *action, *key;
+ 
+ 	if (s->input->onconnect)
+@@ -390,7 +392,25 @@
+ 	// Signal settings are not always inherited by threads, so ensure we ignore this one
+ 	// as it is handled through error returns
+ 	(void) signal(SIGPIPE, SIG_IGN);
+-	for (;;) {
++
++	// Make a valiant effort to wait for an Asterisk connection to be fullybooted.
++	// Bail if not done in 5 seconds.
++
++	while( tries-- ) {
++		pthread_rwlock_rdlock(&sessionlock);
++		svrs = sessions;
++		while ( svrs ) {
++			if ( svrs->server && (svrs->connected > 1) )
++				break;
++			svrs = svrs->next;
++		}
++		pthread_rwlock_unlock(&sessionlock);
++		if ( svrs )
++			break;
++		sleep(1);
++	}
++
++	for (;svrs;) {
+ 		/* Get a complete message block from input handler */
+ 		memset( &m, 0, sizeof(struct message) );
+ 		if (debug > 3)
+@@ -482,6 +502,14 @@
+ 				if ( !strcmp("Authentication failed", astman_get_header(m, "Message")) ) {
+ 					s->connected = -1;
+ 				}
++				continue;
++			} else if ( s->connected == 1 ) {
++				if ( !strcmp("FullyBooted", astman_get_header(m, "Event")) ) {
++					s->connected = 2;
++					if (debug)
++					debugmsg("asterisk@%s: connected successfully!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
++				} else
++					continue;
+ 			}
+ 
+ 			m->session = s;

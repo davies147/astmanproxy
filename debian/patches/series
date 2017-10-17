@@ -8,3 +8,8 @@ segv_on_exit
 stack_memleak_fix
 crash_and_security_fix
 stuck_threads_fix
+add_asterix_filter_mode
+simplify_carefulwrite
+cleanup_relogin_attempt
+add_asterix_newexten_filter
+s_dead_clearing_fix

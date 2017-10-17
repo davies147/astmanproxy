@@ -1,0 +1,84 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ astmanproxy (1.26-11) unstable; urgency=low
+ .
+   * FILT_ASTERIX now filters Event: NewExten
+Author: root <steved@ipcortex.co.uk>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: http://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: <YYYY-MM-DD>
+
+--- a/src/proxyfunc.c
++++ b/src/proxyfunc.c
+@@ -698,6 +698,7 @@
+ 	char *action;
+ 	char *actionid;
+ 	char *event;
++	char *application;
+ 	char *response;
+ 	char *account;
+ 	char *uniqueid;
+@@ -705,7 +706,8 @@
+ 	char *unmatched;
+ 	char *cheaders[] = {"Channel","Channel1","Channel2","Source","Destination","DestinationChannel","ChannelCalling",NULL};
+ 	char *uheaders[] = {"UniqueID","Uniqueid1","Uniqueid2","SrcUniqueId","DestUniqueID",NULL};
+-	int i, cmatched, cfound, ufound;
++	char *appnames[] = {"Voicemail","VoicemailMain","Echo","Playback","Background","Agi","EAgi","DeadAgi","Read","Meetme","Chanspy",NULL};
++	int i, j, cmatched, cfound, ufound;
+ 
+ 	if( debug > 5 )
+ 		debugmsg("ValidateAction called for fd: %d, %s", s->fd, inbound?"inbound":"outbound");
+@@ -773,6 +775,18 @@
+ 				return 0;
+ 			}
+ 		}
++		if( (s->user.filter_bits & FILT_ASTERIX) && !strcasecmp( event, "NewExten" )) {
++			i = 0;
++			application = astman_get_header(m, "Application");
++			for( j=0; application != '\0' && appnames[j] != NULL; j++ ) {
++				if( !strcasecmp( application, appnames[j] ) ) {
++					i = 1;
++					break;
++				}
++			}
++			if( i == 0 && debug )
++				debugmsg("FILT_ASTERIX set. Blocked Application: %s", application);
++		}
+ 	}
+ 	if( i == 0 ) {
+ 		if( debug )
+@@ -963,15 +977,15 @@
+ 	if( tmp[0] == '\0' )
+ 		return m;
+ 	tmp = astman_get_header(m, "ChannelType");			/* Has no ChannelType, or not 'SIP' */
+-	if( tmp[0] == '\0' || strcmp( tmp, "SIP" ) )
++	if( tmp[0] == '\0' || strcasecmp( tmp, "SIP" ) )
+ 		return m;
+ 	tmp = astman_get_header(m, "ChanObjectType");			/* Has no ChanObjectType, or not 'peer' */
+-	if( tmp[0] == '\0' || strcmp( tmp, "peer" ) )
++	if( tmp[0] == '\0' || strcasecmp( tmp, "peer" ) )
+ 		return m;
+ 	tmp = astman_get_header(m, "Response");
+-	if( tmp[0] == '\0' || strcmp( tmp, "Success" ) ) {		/* Not a Result: Success */
++	if( tmp[0] == '\0' || strcasecmp( tmp, "Success" ) ) {		/* Not a Result: Success */
+ 		tmp = astman_get_header(m, "Event");
+-		if( tmp[0] == '\0' || strcmp( tmp, "PeerEntry" ) )	/* And not an Event: PeerEntry */
++		if( tmp[0] == '\0' || strcasecmp( tmp, "PeerEntry" ) )	/* And not an Event: PeerEntry */
+ 			return m;
+ 	}
+ 

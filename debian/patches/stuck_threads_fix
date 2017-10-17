@@ -24,9 +24,9 @@ Forwarded: <no|not-needed|url proving that it has been forwarded>
 Reviewed-By: <name and email of someone who approved the patch>
 Last-Update: <YYYY-MM-DD>
 
---- astmanproxy-1.26.orig/src/standard.c
-+++ astmanproxy-1.26/src/standard.c
-@@ -47,7 +47,7 @@ int _read(struct mansession *s, struct m
+--- a/src/standard.c
++++ b/src/standard.c
+@@ -47,7 +47,7 @@
  }
  
  int _write(struct mansession *s, struct message *m) {
@@ -35,7 +35,7 @@ Last-Update: <YYYY-MM-DD>
  	char w_buf[1500];	// Usual size of an ethernet frame
  	int at;
  
-@@ -58,26 +58,32 @@ int _write(struct mansession *s, struct
+@@ -58,26 +58,32 @@
  
  	if (debug>2) debugmsg("Transmitting standard block of %d lines, fd %d", m->hdrcount, s->fd);
  
@@ -73,8 +73,8 @@ Last-Update: <YYYY-MM-DD>
  	pthread_mutex_unlock(&s->lock);
  
  	return 0;
---- astmanproxy-1.26.orig/src/csv.c
-+++ astmanproxy-1.26/src/csv.c
+--- a/src/csv.c
++++ b/src/csv.c
 @@ -13,15 +13,17 @@
  /* TODO: catch and expand/handle commas in output */
  
@@ -96,9 +96,9 @@ Last-Update: <YYYY-MM-DD>
  	}
  	ast_carefulwrite(s->fd, "\r\n\r\n", 4, s->writetimeout);
  	pthread_mutex_unlock(&s->lock);
---- astmanproxy-1.26.orig/src/common.c
-+++ astmanproxy-1.26/src/common.c
-@@ -70,7 +70,8 @@ int get_input(struct mansession *s, char
+--- a/src/common.c
++++ b/src/common.c
+@@ -70,7 +70,8 @@
  
  	fds[0].events = POLLIN;
  	do {
@@ -108,7 +108,7 @@ Last-Update: <YYYY-MM-DD>
  		if (s->dead)
  			return -1;
  		if (res < 0) {
-@@ -89,7 +90,7 @@ int get_input(struct mansession *s, char
+@@ -89,7 +90,7 @@
  				return -1;
  			break;
  
@@ -117,9 +117,9 @@ Last-Update: <YYYY-MM-DD>
  	} while(!haveline);
  
  	/* We have some input, but it's not ready for processing */
---- astmanproxy-1.26.orig/src/xml.c
-+++ astmanproxy-1.26/src/xml.c
-@@ -67,7 +67,7 @@ void *setdoctag(char *tag, struct manses
+--- a/src/xml.c
++++ b/src/xml.c
+@@ -67,7 +67,7 @@
  }
  
  int _write(struct mansession *s, struct message *m) {
@@ -128,7 +128,7 @@ Last-Update: <YYYY-MM-DD>
  	char buf[BUFSIZE], outstring[MAX_LEN*3], xmlescaped[MAX_LEN*3], xmldoctag[MAX_LEN];
  	char *dpos, *lpos;
  
-@@ -75,9 +75,11 @@ int _write(struct mansession *s, struct
+@@ -75,9 +75,11 @@
  	sprintf(buf, "<%s>\r\n", xmldoctag);
  
  	pthread_mutex_lock(&s->lock);
@@ -142,7 +142,7 @@ Last-Update: <YYYY-MM-DD>
  		memset(xmlescaped, 0, sizeof xmlescaped);
  		xml_quote_string(m->headers[i], xmlescaped);
  		lpos = xmlescaped;
-@@ -90,10 +92,16 @@ int _write(struct mansession *s, struct
+@@ -90,10 +92,16 @@
  			strcat(outstring, "\"/>\r\n");
  		} else
  			sprintf(outstring, " <%s Value=\"%s\"/>\r\n", XML_UNPARSED, lpos);
@@ -161,9 +161,9 @@ Last-Update: <YYYY-MM-DD>
  	pthread_mutex_unlock(&s->lock);
  
  	return 0;
---- astmanproxy-1.26.orig/src/http.c
-+++ astmanproxy-1.26/src/http.c
-@@ -119,7 +119,7 @@ int ParseHTTPInput(char *buf, struct mes
+--- a/src/http.c
++++ b/src/http.c
+@@ -119,7 +119,7 @@
  
  int HTTPHeader(struct mansession *s, char *status) {
  
@@ -172,7 +172,7 @@ Last-Update: <YYYY-MM-DD>
  	time_t t;
  	struct tm tm;
  	char date[80];
-@@ -151,7 +151,9 @@ int HTTPHeader(struct mansession *s, cha
+@@ -151,7 +151,9 @@
  
  	pthread_mutex_lock(&s->lock);
  	s->inputcomplete = 1;

@@ -1,0 +1,49 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ astmanproxy (1.26-6) unstable; urgency=low
+ .
+   * Clean up memory leak in msg-stack code.
+Author: root <steved@ipcortex.co.uk>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: http://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: <YYYY-MM-DD>
+
+--- astmanproxy-1.26.orig/src/astmanproxy.c
++++ astmanproxy-1.26/src/astmanproxy.c
+@@ -445,8 +445,10 @@ void *session_do(struct mansession *s)
+ 				ProxyLogoff(s, &m);
+ 			else if ( !strcasecmp(action, "Challenge") )
+ 				ProxyChallenge(s, &m);
++/* Proxyaction is just a huge security issue
+ 			else if ( !(*proxyaction == '\0') )
+ 				proxyaction_do(proxyaction, &m, s);
++*/
+ 			else if ( ValidateAction(&m, s, 0) ) {
+ 				if ( !(*actionid == '\0') )
+ 					setactionid(actionid, &m, s);
+--- astmanproxy-1.26.orig/src/proxyfunc.c
++++ astmanproxy-1.26/src/proxyfunc.c
+@@ -51,7 +51,7 @@ void *ProxyListSessions(struct mansessio
+ 	while (c && (m.hdrcount < MAX_HEADERS - 4) ) {
+ 		if (!c->server) {
+ 			AddHeader(&m, "ProxyClientSession: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
+-			AddHeader(&m, "ProxyClientActionID: %s", c->actionid||"");
++			AddHeader(&m, "ProxyClientActionID: %s", c->actionid);
+ 			AddHeader(&m, "ProxyClientInputHandler: %s", c->input->formatname);
+ 			AddHeader(&m, "ProxyClientOutputHandler: %s", c->output->formatname);
+ 		} else 

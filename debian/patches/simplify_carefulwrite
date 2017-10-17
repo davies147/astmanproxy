@@ -1,0 +1,144 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ astmanproxy (1.26-10) unstable; urgency=low
+ .
+   * Simplify ast_carefulwrite calling params
+Author: root <steved@ipcortex.co.uk>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: http://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: <YYYY-MM-DD>
+
+--- a/src/standard.c
++++ b/src/standard.c
+@@ -64,13 +64,13 @@
+ 		res = 0;
+ 		if( strlen(m->headers[i]) > 1480 || at + strlen(m->headers[i]) > 1480 )
+ 			if( at ) {
+-				res = ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
++				res = ast_carefulwrite(s, w_buf, at);
+ 				at = 0;
+ 			}
+ 		if( strlen(m->headers[i]) > 1480 ) {
+-			res = ast_carefulwrite(s->fd, m->headers[i], strlen(m->headers[i]) , s->writetimeout);
++			res = ast_carefulwrite(s, m->headers[i], strlen(m->headers[i]));
+ 			if ( res >= 0 )
+-				res = ast_carefulwrite(s->fd, "\r\n", 2, s->writetimeout);
++				res = ast_carefulwrite(s, "\r\n", 2);
+ 		} else {
+ 			memcpy( &w_buf[at], m->headers[i], strlen(m->headers[i]) );
+ 			memcpy( &w_buf[at+strlen(m->headers[i])], "\r\n", 2 );
+@@ -81,7 +81,7 @@
+ 	}
+ 	memcpy( &w_buf[at], "\r\n", 2 );
+ 	at += 2;
+-	res = ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
++	res = ast_carefulwrite(s, w_buf, at);
+ 	if ( res < 0 )
+ 		s->dead = 1;
+ 	pthread_mutex_unlock(&s->lock);
+@@ -99,7 +99,7 @@
+ 		sprintf(banner, "%s/%s\r\n", PROXY_BANNER, PROXY_VERSION);
+ 	}
+ 	pthread_mutex_lock(&s->lock);
+-	ast_carefulwrite(s->fd, banner, strlen(banner), s->writetimeout);
++	ast_carefulwrite(s, banner, strlen(banner));
+ 	pthread_mutex_unlock(&s->lock);
+ 
+ 	return 0;
+--- a/src/csv.c
++++ b/src/csv.c
+@@ -21,11 +21,11 @@
+ 		sprintf(outstring, "\"%s\"", m->headers[i]);
+ 		if (i<m->hdrcount-1)
+ 			strcat(outstring, ", ");
+-		res = ast_carefulwrite(s->fd, outstring, strlen(outstring), s->writetimeout);
++		res = ast_carefulwrite(s, outstring, strlen(outstring));
+ 		if (res < 0)
+ 			s->dead = 1;
+ 	}
+-	ast_carefulwrite(s->fd, "\r\n\r\n", 4, s->writetimeout);
++	ast_carefulwrite(s, "\r\n\r\n", 4);
+ 	pthread_mutex_unlock(&s->lock);
+ 
+ 	return 0;
+--- a/src/common.c
++++ b/src/common.c
+@@ -140,11 +140,13 @@
+ 	it on a file descriptor that _DOES_ have NONBLOCK set.  This way,
+ 	there is only one system call made to do a write, unless we actually
+ 	have a need to wait.  This way, we get better performance. */
+-int ast_carefulwrite(int fd, char *s, int len, int timeoutms)
++int ast_carefulwrite(struct mansession *c, char *s, int len)
+ {
+ 	/* Try to write string, but wait no more than ms milliseconds
+ 		before timing out */
+ 	int res=0;
++	int fd = c->fd;
++	int timeoutms = c->writetimeout;
+ 	struct pollfd fds[1];
+ 	while(len) {
+ 		res = m_send(fd, s, len);
+--- a/src/xml.c
++++ b/src/xml.c
+@@ -75,7 +75,7 @@
+ 	sprintf(buf, "<%s>\r\n", xmldoctag);
+ 
+ 	pthread_mutex_lock(&s->lock);
+-	res = ast_carefulwrite(s->fd, buf, strlen(buf), s->writetimeout);
++	res = ast_carefulwrite(s, buf, strlen(buf));
+ 	if ( res < 0 )
+ 		s->dead = 1;
+ 
+@@ -92,13 +92,13 @@
+ 			strcat(outstring, "\"/>\r\n");
+ 		} else
+ 			sprintf(outstring, " <%s Value=\"%s\"/>\r\n", XML_UNPARSED, lpos);
+-		res = ast_carefulwrite(s->fd, outstring, strlen(outstring), s->writetimeout);
++		res = ast_carefulwrite(s, outstring, strlen(outstring));
+ 		if ( res < 0 )
+ 			s->dead = 1;
+ 	}
+ 	sprintf(buf, "</%s>\r\n\r\n", xmldoctag);
+ 	if ( !s->dead ) {
+-		res = ast_carefulwrite(s->fd, buf, strlen(buf), s->writetimeout);
++		res = ast_carefulwrite(s, buf, strlen(buf));
+ 		if ( res < 0 )
+ 			s->dead = 1;
+ 	}
+--- a/src/http.c
++++ b/src/http.c
+@@ -151,7 +151,7 @@
+ 
+ 	pthread_mutex_lock(&s->lock);
+ 	s->inputcomplete = 1;
+-	res = ast_carefulwrite(s->fd, hdr, strlen(hdr), s->writetimeout);
++	res = ast_carefulwrite(s, hdr, strlen(hdr));
+ 	if ( res < 0 )
+ 		s->dead = 1;
+ 	pthread_mutex_unlock(&s->lock);
+--- a/src/include/astmanproxy.h
++++ b/src/include/astmanproxy.h
+@@ -173,7 +173,7 @@
+ int get_input(struct mansession *s, char *output);
+ int SetIOHandlers(struct mansession *s, char *ifmt, char *ofmt);
+ void destroy_session(struct mansession *s);
+-int ast_carefulwrite(int fd, char *s, int len, int timeoutms);
++int ast_carefulwrite(struct mansession *c, char *s, int len);
+ extern void *SendError(struct mansession *s, char *errmsg, char *actionid);
+ 
+ int close_sock(int socket);

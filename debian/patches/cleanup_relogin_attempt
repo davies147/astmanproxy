@@ -1,0 +1,133 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ astmanproxy (1.26-10) unstable; urgency=low
+ .
+   * Simplify ast_carefulwrite calling params
+Author: root <steved@ipcortex.co.uk>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: http://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: <YYYY-MM-DD>
+
+--- astmanproxy-1.26.orig/src/ssl.c
++++ astmanproxy-1.26/src/ssl.c
+@@ -322,28 +322,28 @@ int ast_connect(struct mansession *a) {
+ 
+ 	fd = connect_nonb(a);
+ 	if ( fd < 0 )
+-	return -1;
++		return -1;
+ 
+ 	if (a->server->use_ssl) {
+-	debugmsg("initiating ssl connection");
+-	if ((s=sec_getslot())!=-1) {	/* find a slot for the ssl handle */
+-		sec_channel[s].fd = fd;	 /* remember the real fd */
+-
+-		if((ssl=SSL_new(cctx))) {	   /* get a new ssl */
+-		sec_channel[s].ssl = ssl;
+-		SSL_set_fd(ssl, fd);	/* and attach the real fd */
+-		err = SSL_connect(ssl); /* now try and connect */
++		debugmsg("initiating ssl connection");
++		if ((s=sec_getslot())!=-1) {	/* find a slot for the ssl handle */
++			sec_channel[s].fd = fd;	 /* remember the real fd */
++
++			if((ssl=SSL_new(cctx))) {	   /* get a new ssl */
++				sec_channel[s].ssl = ssl;
++				SSL_set_fd(ssl, fd);	/* and attach the real fd */
++				err = SSL_connect(ssl); /* now try and connect */
++			} else
++				debugmsg("couldn't create ssl client context");
++			fd = -(s+2);		/* offset by two and negate */
++						/* this tells us it is a ssl fd */
+ 		} else
+-		debugmsg("couldn't create ssl client context");
+-		fd = -(s+2);			/* offset by two and negate */
+-					/* this tells us it is a ssl fd */
+-	} else
+-		debugmsg("couldn't get SSL slot!");
+-
+-	if (err==-1) {
+-		close_sock(fd);		 /* that frees the ssl too */
+-		fd = -1;
+-	}
++			debugmsg("couldn't get SSL slot!");
++
++		if (err==-1) {
++			close_sock(fd);		 /* that frees the ssl too */
++			fd = -1;
++		}
+ 	}
+ 
+ 	debugmsg("returning ast_connect with %d", fd);
+@@ -356,10 +356,10 @@ int ast_connect(struct mansession *a) {
+ 
+ int connect_nonb(struct mansession *a)
+ {
+-	int				 flags, n, error;
+-	socklen_t		   len;
+-	fd_set		  rset, wset;
+-	struct timeval  tval;
++	int		flags, n, error;
++	socklen_t	len;
++	fd_set		rset, wset;
++	struct timeval	tval;
+ 	int nsec = 1, sockfd;
+ 
+ 	sockfd = get_real_fd(a->fd);
+--- astmanproxy-1.26.orig/src/standard.c
++++ astmanproxy-1.26/src/standard.c
+@@ -56,7 +56,8 @@ int _write(struct mansession *s, struct
+ 	at = 0;
+ 	pthread_mutex_lock(&s->lock);
+ 
+-	if (debug>2) debugmsg("Transmitting standard block of %d lines, fd %d", m->hdrcount, s->fd);
++	if (debug>2)
++		debugmsg("Transmitting standard block of %d lines, fd %d", m->hdrcount, s->fd);
+ 
+ 	for (i=0; !s->dead && i<m->hdrcount; i++) {
+ 		if( ! strlen(m->headers[i]) )
+--- astmanproxy-1.26.orig/src/astmanproxy.c
++++ astmanproxy-1.26/src/astmanproxy.c
+@@ -569,10 +569,6 @@ int ConnectAsterisk(struct mansession *s
+ 
+ 	/* Construct auth message just once */
+ 	memset( &m, 0, sizeof(struct message) );
+-	AddHeader(&m, "Action: Login");
+-	AddHeader(&m, "Username: %s", s->server->ast_user);
+-	AddHeader(&m, "Secret: %s", s->server->ast_pass);
+-	AddHeader(&m, "Events: %s", s->server->ast_events);
+ 
+ 	s->inlen = 0;
+ 	s->inoffset = 0;
+@@ -589,7 +585,16 @@ int ConnectAsterisk(struct mansession *s
+ 			} else
+ 				sleep(pc.retryinterval);
+ 		} else {
+-			/* Send login */
++			/* Send login, ensure message object is clean first. */
++			m.hdrcount = 0;
++			m.in_command = 0;
++			m.session = s;
++
++			AddHeader(&m, "Action: Login");
++			AddHeader(&m, "Username: %s", s->server->ast_user);
++			AddHeader(&m, "Secret: %s", s->server->ast_pass);
++			AddHeader(&m, "Events: %s", s->server->ast_events);
++
+ 			s->output->write(s, &m);
+ 			res = 0;
+ 			break;
