@@ -27,7 +27,8 @@
 #define BUFSIZE		 1024
 #define MAX_HEADERS	 256
 #define MAX_LEN		 1024
-#define MAX_LEN_INBUF	 (1024*1024)
+#define MAX_LEN_INBUF	 (4*1024*1024)
+#define MAX_LEN_NETBUF	 (2*1024*1024)
 #define MAX_STACK	 1024
 #define MAX_STACKDATA	 (1024*32)
 

@@ -54,6 +54,8 @@ int _write(struct mansession *s, struct message *m) {
 	// Combine headers into a buffer for more effective network use.
 	// This can have HUGE benefits under load.
 	at = 0;
+	if ( s->dead )
+		return 0;
 	pthread_mutex_lock(&s->lock);
 
 	if (debug>2)
@@ -67,6 +69,10 @@ int _write(struct mansession *s, struct message *m) {
 			if( at ) {
 				res = ast_carefulwrite(s, w_buf, at);
 				at = 0;
+				if ( res < 0 ) {
+					s->dead = 1;
+					break;
+				}
 			}
 		if( strlen(m->headers[i]) > 1480 ) {
 			res = ast_carefulwrite(s, m->headers[i], strlen(m->headers[i]));
@@ -86,7 +92,7 @@ int _write(struct mansession *s, struct message *m) {
 		res = ast_carefulwrite(s, w_buf, at);
 		if ( res < 0 )
 			s->dead = 1;
-		}
+	}
 	pthread_mutex_unlock(&s->lock);
 
 	return 0;

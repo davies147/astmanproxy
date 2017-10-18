@@ -361,6 +361,7 @@ int connect_nonb(struct mansession *a)
 	fd_set		rset, wset;
 	struct timeval	tval;
 	int nsec = 1, sockfd;
+	int setbuf;
 
 	sockfd = get_real_fd(a->fd);
 
@@ -420,5 +421,11 @@ done:
 		errno = error;
 		return(-1);
 	}
+
+	/* At least attempt to hugely increase our network buffers */
+	setbuf = MAX_LEN_NETBUF;
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUFFORCE, (void *)&setbuf, sizeof(setbuf));
+	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUFFORCE, (void *)&setbuf, sizeof(setbuf));
+
 	return(sockfd);
 }

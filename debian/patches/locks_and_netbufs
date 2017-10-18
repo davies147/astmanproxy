@@ -1,0 +1,72 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ astmanproxy (1.26-13) unstable; urgency=low
+ .
+   * Try to clean up daed flags and locking some more.
+Author: root <steved@ipcortex.co.uk>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: http://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: <YYYY-MM-DD>
+
+--- a/src/ssl.c
++++ b/src/ssl.c
+@@ -361,6 +361,7 @@
+ 	fd_set		rset, wset;
+ 	struct timeval	tval;
+ 	int nsec = 1, sockfd;
++	int setbuf;
+ 
+ 	sockfd = get_real_fd(a->fd);
+ 
+@@ -420,5 +421,11 @@
+ 		errno = error;
+ 		return(-1);
+ 	}
++
++	/* At least attempt to hugely increase our network buffers */
++	setbuf = MAX_LEN_NETBUF;
++	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUFFORCE, (void *)&setbuf, sizeof(setbuf));
++	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUFFORCE, (void *)&setbuf, sizeof(setbuf));
++
+ 	return(sockfd);
+ }
+--- a/src/common.c
++++ b/src/common.c
+@@ -87,8 +87,8 @@
+ 			res = m_recv(s->fd, s->inbuf + s->inoffset + s->inlen, sizeof(s->inbuf) - s->inoffset - 1 - s->inlen, 0);
+ 			pthread_mutex_unlock(&s->lock);
+ 			if (res < 1) {
+-/* TODO: Check errno, and set dead if needed? */
+-				return -1;
++				if ( errno != EAGAIN && errno != EWOULDBLOCK )
++					return -1;
+ 			}
+ 			break;
+ 
+--- a/src/include/astmanproxy.h
++++ b/src/include/astmanproxy.h
+@@ -27,7 +27,8 @@
+ #define BUFSIZE		 1024
+ #define MAX_HEADERS	 256
+ #define MAX_LEN		 1024
+-#define MAX_LEN_INBUF	 (1024*1024)
++#define MAX_LEN_INBUF	 (4*1024*1024)
++#define MAX_LEN_NETBUF	 (2*1024*1024)
+ #define MAX_STACK	 1024
+ #define MAX_STACKDATA	 (1024*32)
+ 

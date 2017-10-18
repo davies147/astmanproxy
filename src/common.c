@@ -79,15 +79,17 @@ int get_input(struct mansession *s, char *output)
 				continue;
 			}
 			if (debug)
-				debugmsg("Select returned error");
+				debugmsg("Poll returned error");
 			return -1;
 		} else if (res > 0) {
 			pthread_mutex_lock(&s->lock);
 			/* read from socket; SSL or otherwise */
 			res = m_recv(s->fd, s->inbuf + s->inoffset + s->inlen, sizeof(s->inbuf) - s->inoffset - 1 - s->inlen, 0);
 			pthread_mutex_unlock(&s->lock);
-			if (res < 1)
-				return -1;
+			if (res < 1) {
+				if ( errno != EAGAIN && errno != EWOULDBLOCK )
+					return -1;
+			}
 			break;
 
 		} /* else res == 0 : timeout */

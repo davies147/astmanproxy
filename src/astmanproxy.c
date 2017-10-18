@@ -175,14 +175,19 @@ void destroy_session(struct mansession *s)
 			prev->next = cur->next;
 		else
 			sessions = cur->next;
+		pthread_rwlock_unlock(&sessionlock);
+
 		debugmsg("Connection closed: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr));
+		pthread_mutex_lock(&s->lock);
 		close_sock(s->fd);	/* close tcp/ssl socket */
 		FreeStack(s);
+		pthread_mutex_unlock(&s->lock);
 		pthread_mutex_destroy(&s->lock);
 		free(s);
-	} else if (debug)
+	} else if (debug) {
 		debugmsg("Trying to delete non-existent session %p?\n", s);
-	pthread_rwlock_unlock(&sessionlock);
+		pthread_rwlock_unlock(&sessionlock);
+	}
 
 	/* If there are no servers and no clients, why are we here? */
 	if (!sessions) {
@@ -473,6 +478,7 @@ void *session_do(struct mansession *s)
 			break;
 	}
 
+	s->dead = 1;
 	destroy_session(s);
 	if (debug)
 		debugmsg("--- exiting session_do thread ---");
@@ -547,6 +553,7 @@ void *HandleAsterisk(struct mansession *s)
 leave:
 	if (debug)
 		debugmsg("asterisk@%s: Giving up and exiting thread", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+	s->dead = 1;
 	destroy_session(s);
 	pthread_exit(NULL);
 	return NULL;

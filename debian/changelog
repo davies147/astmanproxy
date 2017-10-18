@@ -1,3 +1,10 @@
+astmanproxy (1.26-13) unstable; urgency=low
+
+  * Try to clean up daed flags and locking some more.
+  * Set a much bigger RECV netbuf if possible
+
+ -- root <steved@ipcortex.co.uk>  Tue, 17 Oct 2017 16:02:00 +0100
+
 astmanproxy (1.26-12) unstable; urgency=low
 
   * Remember to clear s->dead when reconnecting to Asterisk

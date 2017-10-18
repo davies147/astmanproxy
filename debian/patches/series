@@ -13,3 +13,5 @@ simplify_carefulwrite
 cleanup_relogin_attempt
 add_asterix_newexten_filter
 s_dead_clearing_fix
+dead_and_locks_cleanup
+locks_and_netbufs
