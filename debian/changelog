@@ -1,3 +1,9 @@
+astmanproxy (1.26-14) unstable; urgency=low
+
+  * Clean up asterisk input buffer when connection lost!
+
+ -- root <steved@ipcortex.co.uk>  Mon, 23 Oct 2017 15:47:17 +0100
+
 astmanproxy (1.26-13) unstable; urgency=low
 
   * Try to clean up daed flags and locking some more.
