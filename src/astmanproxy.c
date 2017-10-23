@@ -544,6 +544,7 @@ void *HandleAsterisk(struct mansession *s)
 			/* TODO: do we need to do more than this here? or something different? */
 			if ( debug )
 				debugmsg("asterisk@%s: Not connected", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr));
+			memset( &m, 0, sizeof(struct message) );
 			if ( ConnectAsterisk(s) )
 				break;
 		}
