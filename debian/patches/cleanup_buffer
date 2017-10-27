@@ -23,13 +23,15 @@ Forwarded: <no|not-needed|url proving that it has been forwarded>
 Reviewed-By: <name and email of someone who approved the patch>
 Last-Update: <YYYY-MM-DD>
 
---- astmanproxy-1.26.orig/src/astmanproxy.c
-+++ astmanproxy-1.26/src/astmanproxy.c
-@@ -544,6 +544,7 @@ void *HandleAsterisk(struct mansession *
+--- a/src/astmanproxy.c
++++ b/src/astmanproxy.c
+@@ -544,6 +544,9 @@
  			/* TODO: do we need to do more than this here? or something different? */
  			if ( debug )
  				debugmsg("asterisk@%s: Not connected", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr));
 +			memset( &m, 0, sizeof(struct message) );
++			s->inlen = 0;
++			s->inoffset = 0;
  			if ( ConnectAsterisk(s) )
  				break;
  		}

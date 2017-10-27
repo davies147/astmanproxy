@@ -5,10 +5,9 @@ Description: <short summary of the patch>
  information below has been extracted from the changelog. Adjust it or drop
  it.
  .
- astmanproxy (1.26-13) unstable; urgency=low
+ astmanproxy (1.26-14) unstable; urgency=low
  .
-   * Try to clean up daed flags and locking some more.
-   * Set a much bigger RECV netbuf if possible
+   * Clean up asterisk input buffer when connection lost!
 Author: root <steved@ipcortex.co.uk>
 
 ---
@@ -24,23 +23,24 @@ Forwarded: <no|not-needed|url proving that it has been forwarded>
 Reviewed-By: <name and email of someone who approved the patch>
 Last-Update: <YYYY-MM-DD>
 
---- a/Makefile
-+++ b/Makefile
-@@ -20,6 +20,8 @@
- PREFIX:= /usr/local
- BINDIR := $(DESTDIR)$(PREFIX)/sbin
+--- astmanproxy-1.26.orig/src/astmanproxy.c
++++ astmanproxy-1.26/src/astmanproxy.c
+@@ -544,9 +544,6 @@ void *HandleAsterisk(struct mansession *
+ 			/* TODO: do we need to do more than this here? or something different? */
+ 			if ( debug )
+ 				debugmsg("asterisk@%s: Not connected", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr));
+-			memset( &m, 0, sizeof(struct message) );
+-			s->inlen = 0;
+-			s->inoffset = 0;
+ 			if ( ConnectAsterisk(s) )
+ 				break;
+ 		}
+@@ -572,6 +569,8 @@ int ConnectAsterisk(struct mansession *s
+ 		return 1;
+ 	s->connected = 0;
+ 	s->dead = 0;
++	s->inlen = 0;
++	s->inoffset = 0;
  
-+LIBDIR := $(BINDIR)
-+
- # For compilation dependencies
- MODS := astmanproxy config config_perms common proxyfunc log ssl md5 crypt_blowfish crypt_gensalt wrapper
- HANDLERS := xml standard csv http
-@@ -27,7 +29,7 @@
- LIBS := -lssl
- 
- # Add -g below for debug/GDB symbols
--CFLAGS:=-Wall -O2 -D_REENTRANT -D_GNU_SOURCE -fPIC
-+CFLAGS:=-Wall -O0 -D_REENTRANT -D_GNU_SOURCE -fPIC -g
- 
- ifeq (${OSARCH},Darwin)  
-   LIBS+=-lresolv
+ 	if (debug)
+ 	debugmsg("asterisk@%s: Connecting (u=%s, p=%s, ssl=%s)", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr),

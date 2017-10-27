@@ -1,3 +1,9 @@
+astmanproxy (1.26-15) unstable; urgency=low
+
+  * Fix the previous fix
+
+ -- root <steved@ipcortex.co.uk>  Fri, 27 Oct 2017 11:19:40 +0100
+
 astmanproxy (1.26-14) unstable; urgency=low
 
   * Clean up asterisk input buffer when connection lost!
