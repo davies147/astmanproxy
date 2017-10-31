@@ -35,12 +35,3 @@ Last-Update: <YYYY-MM-DD>
  # For compilation dependencies
  MODS := astmanproxy config config_perms common proxyfunc log ssl md5 crypt_blowfish crypt_gensalt wrapper
  HANDLERS := xml standard csv http
-@@ -27,7 +29,7 @@
- LIBS := -lssl
- 
- # Add -g below for debug/GDB symbols
--CFLAGS:=-Wall -O2 -D_REENTRANT -D_GNU_SOURCE -fPIC
-+CFLAGS:=-Wall -O0 -D_REENTRANT -D_GNU_SOURCE -fPIC -g
- 
- ifeq (${OSARCH},Darwin)  
-   LIBS+=-lresolv
