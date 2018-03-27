@@ -180,8 +180,8 @@ void destroy_session(struct mansession *s)
 		debugmsg("Connection closed: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr));
 		pthread_mutex_lock(&s->lock);
 		close_sock(s->fd);	/* close tcp/ssl socket */
-		FreeStack(s);
 		pthread_mutex_unlock(&s->lock);
+		FreeStack(s);
 		pthread_mutex_destroy(&s->lock);
 		free(s);
 	} else if (debug) {
