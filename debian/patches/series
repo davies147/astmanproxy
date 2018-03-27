@@ -18,3 +18,4 @@ locks_and_netbufs
 cleanup_buffer
 fix_buffer_fix
 # test_mangle
+thread_close_deadlock

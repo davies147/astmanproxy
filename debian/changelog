@@ -1,3 +1,9 @@
+astmanproxy (1.26-16) unstable; urgency=low
+
+  * Fix thread shutdown hang
+
+ -- root <steved@ipcortex.co.uk>  Tue, 27 Mar 2017 14:42:02 +0100
+
 astmanproxy (1.26-15) unstable; urgency=low
 
   * Fix the previous fix
