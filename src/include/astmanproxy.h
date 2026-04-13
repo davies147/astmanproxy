@@ -107,10 +107,13 @@ struct proxyconfig {
 	char forcebanner[80];			/* override banner output in 'standard' protocol */
 };
 
+struct mansession;
+struct message;
+
 struct iohandler {
-	int (*read) ();
-	int (*write) ();
-	int (*onconnect) ();
+	int (*read) (struct mansession *s, struct message *m);
+	int (*write) (struct mansession *s, struct message *m);
+	int (*onconnect) (struct mansession *s, struct message *m);
 	char formatname[80];
 	void *dlhandle;
 	struct iohandler *next;
@@ -158,7 +161,7 @@ struct message {
 	struct mansession *session;
 };
 
-struct proxyconfig pc;
+extern struct proxyconfig pc;
 extern int debug;
 
 /* Common Function Prototypes */
