@@ -3,7 +3,7 @@
 Based on the original astmanproxy by David C. Troy - Original README below
 
 I stopped maintaining this in late 2022 - If anyone would like to take on
-the mantle of looking aftewr this, I am happy to mention your fork "here".
+the mantle of looking after this, I am happy to mention your fork "here".
 Let me know... Create a PR?
 
 ### Docker
